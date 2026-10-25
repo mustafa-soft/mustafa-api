@@ -110,13 +110,27 @@ def verify_chimera():
 
 @app.route('/unlocktool')
 def unlocktool():
-    return jsonify({
-        "reseller": RESELLER_NAME,
-        "email": RESELLER_EMAIL,
-        "api_url": "https://mustafa-api-1.onrender.com/unlocktool",
-        "status": "Ready to be reseller for UnlockTool",
-        "website": "https://mustafa-soft.vercel.app/"
-    })
+    if request.args.get('format') == 'json':
+        return jsonify({
+            "reseller": RESELLER_NAME,
+            "email": RESELLER_EMAIL,
+            "api_url": "https://mustafa-api-1.onrender.com/unlocktool",
+            "status": "Ready to be reseller for UnlockTool",
+            "website": "https://mustafa-soft.vercel.app/"
+        })
+    extra = f"""<div style='margin-top:15px;padding:20px;background:#111b2f;border-radius:12px;border:1px solid #1e3a5f'>
+    <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;direction:ltr;font-family:monospace;font-size:13px'>
+    <div><span style='color:#64748b'>Reseller:</span><br><span style='color:#0ea5e9;font-weight:700'>mustafa-soft</span></div>
+    <div><span style='color:#64748b'>Email:</span><br><span style='color:#fff'>{RESELLER_EMAIL}</span></div>
+    <div><span style='color:#64748b'>Status:</span><br><span style='color:#10b981'>Ready for UnlockTool ✅</span></div>
+    <div><span style='color:#64748b'>API:</span><br><span style='color:#0ea5e9'>mustafa-api-1.onrender.com</span></div>
+    </div>
+    <div style='margin-top:15px;padding-top:15px;border-top:1px solid #1e293b;display:flex;gap:10px;justify-content:center'>
+    <a href="/unlocktool/verify" style='background:#0f281e;border:1px solid #10b981;color:#10b981;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;font-size:12px'>✅ Verify UnlockTool</a>
+    <a href="/unlocktool?format=json" style='background:transparent;border:1px solid #334155;color:#94a3b8;padding:8px 16px;border-radius:8px;text-decoration:none;font-size:12px'>JSON Format</a>
+    </div>
+    </div>"""
+    return get_html_page("UnlockTool", "UnlockTool Ready 🔓✅", extra)
 
 @app.route('/activate')
 @app.route('/check')
