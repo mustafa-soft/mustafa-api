@@ -48,7 +48,7 @@ body{{background:#0a0e1a;color:#fff;min-height:100vh;display:flex;flex-direction
 <body>
 <div class="header">
 <div class="logo">Mustafa Soft</div>
-<div class="subtitle">Chimera Tool & UnlockTool - Reseller API</div>
+<div class="subtitle">Chimera Tool & UnlockTool & TSM Tool - Reseller API</div>
 <div class="status-badge"><span class="dot"></span> {status_text}</div>
 <div style="margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
 <a href="https://mustafa-soft.vercel.app/" class="btn" style="width:auto;padding:12px 25px">🌐 الموقع الرسمي</a>
@@ -67,8 +67,13 @@ body{{background:#0a0e1a;color:#fff;min-height:100vh;display:flex;flex-direction
 <a href="/unlocktool" class="btn">عرض UnlockTool API</a>
 </div>
 <div class="card">
+<h3>⚙️ TSM Tool</h3>
+<p>تفعيل رسمي - 3 / 6 / 12 شهر<br>أداة TSM Pro - شاومي و MTK</p>
+<a href="/tsmtool" class="btn">عرض TSM Tool API</a>
+</div>
+<div class="card">
 <h3>✅ Verify System</h3>
-<p>نظام التحقق للموزعين<br>Chimera + UnlockTool Ready</p>
+<p>نظام التحقق للموزعين<br>Chimera + UnlockTool + TSM Ready</p>
 <a href="/chimera/verify" class="btn">تحقق Chimera</a>
 </div>
 </div>
@@ -78,6 +83,8 @@ body{{background:#0a0e1a;color:#fff;min-height:100vh;display:flex;flex-direction
 <div class="route-item"><span class="route-path">/chimera/verify</span><span class="route-desc">Verify Chimera</span></div>
 <div class="route-item"><span class="route-path">/unlocktool</span><span class="route-desc">UnlockTool Reseller Info</span></div>
 <div class="route-item"><span class="route-path">/unlocktool/verify</span><span class="route-desc">Verify UnlockTool</span></div>
+<div class="route-item"><span class="route-path">/tsmtool</span><span class="route-desc">TSM Tool Reseller Info</span></div>
+<div class="route-item"><span class="route-path">/tsmtool/verify</span><span class="route-desc">Verify TSM Tool</span></div>
 <div class="route-item"><span class="route-path">/api/create-activation</span><span class="route-desc">Create Activation Order</span></div>
 <div class="route-item"><span class="route-path">/activate, /check, /verify, /api</span><span class="route-desc">All Working ✅</span></div>
 {extra_content}
@@ -143,6 +150,35 @@ def extra_routes():
 def verify_unlocktool():
     return jsonify({"verified": True, "ready": True, "reseller": RESELLER_NAME, "tool": "unlocktool", "email": RESELLER_EMAIL})
 
+@app.route('/tsmtool')
+def tsmtool():
+    if request.args.get('format') == 'json':
+        return jsonify({
+            "reseller": RESELLER_NAME,
+            "email": RESELLER_EMAIL,
+            "api_url": "https://mustafa-api-1.onrender.com/tsmtool",
+            "status": "Ready to be reseller for TSM Tool",
+            "website": "https://mustafa-soft.vercel.app/",
+            "md5_hash": hashlib.md5(RESELLER_NAME.encode()).hexdigest()
+        })
+    extra = f"""<div style='margin-top:15px;padding:20px;background:#111b2f;border-radius:12px;border:1px solid #1e3a5f'>
+    <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;direction:ltr;font-family:monospace;font-size:13px'>
+    <div><span style='color:#64748b'>Reseller:</span><br><span style='color:#0ea5e9;font-weight:700'>mustafa-soft</span></div>
+    <div><span style='color:#64748b'>Email:</span><br><span style='color:#fff'>{RESELLER_EMAIL}</span></div>
+    <div><span style='color:#64748b'>Status:</span><br><span style='color:#10b981'>Ready for TSM Tool ✅</span></div>
+    <div><span style='color:#64748b'>API:</span><br><span style='color:#0ea5e9'>mustafa-api-1.onrender.com/tsmtool</span></div>
+    </div>
+    <div style='margin-top:15px;padding-top:15px;border-top:1px solid #1e293b;display:flex;gap:10px;justify-content:center'>
+    <a href="/tsmtool/verify" style='background:#0f281e;border:1px solid #10b981;color:#10b981;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;font-size:12px'>✅ Verify TSM Tool</a>
+    <a href="/tsmtool?format=json" style='background:transparent;border:1px solid #334155;color:#94a3b8;padding:8px 16px;border-radius:8px;text-decoration:none;font-size:12px'>JSON Format</a>
+    </div>
+    </div>"""
+    return get_html_page("TSM Tool", "TSM Tool Ready ⚙️✅", extra)
+
+@app.route('/tsmtool/verify')
+def verify_tsmtool():
+    return jsonify({"verified": True, "ready": True, "reseller": RESELLER_NAME, "tool": "tsmtool", "email": RESELLER_EMAIL})
+
 @app.route('/api/create-activation', methods=['GET', 'POST'])
 def create_activation():
     data = request.get_json() or {} if request.is_json else request.args.to_dict() if request.args else {}
@@ -161,7 +197,8 @@ def create_activation():
         "tool": tool,
         "note": "سيتم التفعيل يدويا - واتساب 0900287738",
         "chimera_ready": True,
-        "unlocktool_ready": True
+        "unlocktool_ready": True,
+        "tsmtool_ready": True
     })
 
 if __name__ == '__main__':
