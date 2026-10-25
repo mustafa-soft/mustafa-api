@@ -11,7 +11,7 @@ RESELLER_EMAIL = "mustafa888105@gmail.com"
 @app.route('/')
 def home():
     return jsonify({
-        "status": "Mustafa GSM API is Running",
+        "status": "Mustafa GSM API is Running ✅",
         "message": "Chimera + UnlockTool Ready",
         "url": "https://mustafa-api-1.onrender.com",
         "tools": ["chimera", "unlocktool"]
@@ -39,7 +39,19 @@ def unlocktool():
         "email": RESELLER_EMAIL,
         "api_url": "https://mustafa-api-1.onrender.com/unlocktool",
         "status": "Ready to be reseller for UnlockTool",
-        "website": "https://taupe-squirrel-26ced9.netlify.app/"
+        "website": "https://mustafa-soft.vercel.app/"
+    })
+
+@app.route('/activate')
+@app.route('/check')
+@app.route('/verify')
+@app.route('/api')
+def extra_routes():
+    return jsonify({
+        "status": "Mustafa GSM API Running",
+        "website": "https://mustafa-soft.vercel.app/",
+        "whatsapp": "0900287738",
+        "routes": ["/", "/chimera", "/chimera/verify", "/unlocktool", "/unlocktool/verify", "/api/create-activation"]
     })
 
 @app.route('/unlocktool/verify')
@@ -60,15 +72,17 @@ def create_activation():
             data = request.get_json(force=True) or {}
         except:
             data = {}
+    
     email = data.get('email', 'test@gmail.com')
     duration = data.get('duration', '12 months')
     tool = data.get('tool', 'chimera')
+    
     return jsonify({
         "status": "success",
-        "message": f"Received activation request {tool} - {duration}",
+        "message": f"تم استلام طلب تفعيل {tool} - {duration}",
         "email": email,
         "tool": tool,
-        "note": "Will be activated manually from reseller panel - WhatsApp 0900287738",
+        "note": "سيتم التفعيل يدويا من لوحة الموزع - تواصل واتساب 0900287738",
         "chimera_ready": True,
         "unlocktool_ready": True
     })
