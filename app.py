@@ -48,7 +48,7 @@ body{{background:#0a0e1a;color:#fff;min-height:100vh;display:flex;flex-direction
 <body>
 <div class="header">
 <div class="logo">Mustafa Soft</div>
-<div class="subtitle">Chimera Tool & UnlockTool & TSM Tool & Haafedk & Octopus & EFT & Pandora - Reseller API</div>
+<div class="subtitle">Chimera Tool & UnlockTool & TSM Tool & Haafedk & Octopus & EFT & Pandora & Z3X - Reseller API</div>
 <div class="status-badge"><span class="dot"></span> {status_text}</div>
 <div style="margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
 <a href="https://mustafa-soft.vercel.app/" class="btn" style="width:auto;padding:12px 25px">🌐 الموقع الرسمي</a>
@@ -92,13 +92,18 @@ body{{background:#0a0e1a;color:#fff;min-height:100vh;display:flex;flex-direction
 <a href="/pandora" class="btn" style="background:linear-gradient(90deg,#8b5cf6,#ec4899)">عرض Pandora API</a>
 </div>
 <div class="card">
+<h3>🔴 Z3X Box</h3>
+<p>تفعيل رسمي - Z3X Samsung Tool Pro<br>LG, Samsung - أقوى أداة</p>
+<a href="/z3x" class="btn" style="background:linear-gradient(90deg,#dc2626,#991b1b)">عرض Z3X API</a>
+</div>
+<div class="card">
 <h3>✅ Verify System</h3>
-<p>نظام التحقق للموزعين<br>7 أدوات Ready ✅</p>
+<p>نظام التحقق للموزعين<br>8 أدوات Ready ✅</p>
 <a href="/chimera/verify" class="btn">تحقق Chimera</a>
 </div>
 </div>
 <div class="routes">
-<h2>📡 Available API Routes - 7 Tools Live</h2>
+<h2>📡 Available API Routes - 8 Tools Live</h2>
 <div class="route-item"><span class="route-path">/chimera</span><span class="route-desc">Chimera Reseller Info</span></div>
 <div class="route-item"><span class="route-path">/chimera/verify</span><span class="route-desc">Verify Chimera</span></div>
 <div class="route-item"><span class="route-path">/unlocktool</span><span class="route-desc">UnlockTool Reseller Info</span></div>
@@ -112,6 +117,8 @@ body{{background:#0a0e1a;color:#fff;min-height:100vh;display:flex;flex-direction
 <div class="route-item"><span class="route-path">/eft</span><span class="route-desc">EFT Pro Reseller 🆕</span></div>
 <div class="route-item"><span class="route-path">/eft/verify</span><span class="route-desc">Verify EFT 🆕</span></div>
 <div class="route-item"><span class="route-path">/pandora</span><span class="route-desc">Pandora Box Reseller 🆕</span></div>
+<div class="route-item"><span class="route-path">/z3x</span><span class="route-desc">Z3X Box Reseller 🆕🆕</span></div>
+<div class="route-item"><span class="route-path">/z3x/verify</span><span class="route-desc">Verify Z3X 🆕🆕</span></div>
 <div class="route-item"><span class="route-path">/pandora/verify</span><span class="route-desc">Verify Pandora 🆕</span></div>
 <div class="route-item"><span class="route-path">/api/create-activation</span><span class="route-desc">Create Activation Order</span></div>
 <div class="route-item"><span class="route-path">/activate, /check, /verify, /api</span><span class="route-desc">All Working ✅</span></div>
@@ -128,7 +135,7 @@ body{{background:#0a0e1a;color:#fff;min-height:100vh;display:flex;flex-direction
 
 @app.route('/')
 def home():
-    return get_html_page("API Home", "API is Running ✅ - 7 Tools - mustafa-soft")
+    return get_html_page("API Home", "API is Running ✅ - 8 Tools - mustafa-soft")
 
 @app.route('/chimera')
 def chimera():
@@ -264,12 +271,30 @@ def pandora():
 def verify_pandora():
     return jsonify({"verified": True, "ready": True, "reseller": RESELLER_NAME, "tool": "pandora", "email": RESELLER_EMAIL})
 
+@app.route('/z3x')
+def z3x():
+    if request.args.get('format') == 'json':
+        return jsonify({
+            "reseller": RESELLER_NAME,
+            "email": RESELLER_EMAIL,
+            "api_url": "https://mustafa-api-1.onrender.com/z3x",
+            "status": "Ready to be reseller for Z3X Box - Samsung Tool Pro",
+            "website": "https://mustafa-soft.vercel.app/",
+            "md5_hash": hashlib.md5(RESELLER_NAME.encode()).hexdigest(),
+            "tools": ["Z3X Samsung Tool Pro", "Z3X LG Tool", "Z3X Samsung Activation", "Z3X LG Activation"]
+        })
+    return get_html_page("Z3X Box", "Z3X Box Ready 🔴✅", "")
+
+@app.route('/z3x/verify')
+def verify_z3x():
+    return jsonify({"verified": True, "ready": True, "reseller": RESELLER_NAME, "tool": "z3x", "email": RESELLER_EMAIL})
+
 @app.route('/activate')
 @app.route('/check')
 @app.route('/verify')
 @app.route('/api')
 def extra_routes():
-    return get_html_page("API Status", "All Routes Working ✅ - 7 Tools Live")
+    return get_html_page("API Status", "All Routes Working ✅ - 8 Tools Live")
 
 @app.route('/api/create-activation', methods=['GET', 'POST'])
 def create_activation():
@@ -294,7 +319,8 @@ def create_activation():
         "haafedk_ready": True,
         "octopus_ready": True,
         "eft_ready": True,
-        "pandora_ready": True
+        "pandora_ready": True,
+        "z3x_ready": True
     })
 
 if __name__ == '__main__':
