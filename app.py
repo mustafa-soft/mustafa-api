@@ -6,11 +6,9 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# حط رابط الـ API ومفتاح التفعيل هنا مباشرة مؤقتاً للتجربة
+# التوثيق ورابط الـ API الصحيح
 GSM_API_URL = "https://api2-gsm.elbroos.com/"
-GSM_API_KEY = "hNDcyNGZmMTkMjMyMTQ1ZWI="
-
-
+GSM_API_KEY = "BXVzdGFmYW9wZW44OEBnbWFpbC5jb206MWE4MjY5YTUwZTFkZmVhNDcyNGZmMTlkMjMyMTQ1ZWI="
 
 @app.route('/', methods=['GET'])
 def home():
@@ -24,10 +22,28 @@ def home():
 def test_gsm():
     try:
         headers = {
-            "Authorization": f"Bearer {GSM_API_KEY}",
+            "Authorization": f"Basic {GSM_API_KEY}",
             "Content-Type": "application/json"
         }
         
+        response = requests.get(GSM_API_URL, headers=headers, timeout=15)
+        
+        try:
+            res_data = response.json()
+        except:
+            res_data = response.text
+
+        return jsonify({
+            "status": "success",
+            "gsm_status_code": response.status_code,
+            "response_data": res_data
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
         response = requests.get(GSM_API_URL, headers=headers, timeout=15)
         
         return jsonify({
