@@ -6,12 +6,9 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# قراءة المتغيرات مع طباعتها للتاكد
-GSM_API_URL = os.environ.get('GSM_API_URL')
-GSM_API_KEY = os.environ.get('GSM_API_KEY')
-
-print(f"DEBUG URL: {GSM_API_URL}")
-print(f"DEBUG KEY: {GSM_API_KEY}")
+# حط رابط الـ API ومفتاح التفعيل هنا مباشرة مؤقتاً للتجربة
+GSM_API_URL = "حط_رابط_الـ_api_هنا"
+GSM_API_KEY = "حط_مفتاح_التفعيل_هنا"
 
 @app.route('/', methods=['GET'])
 def home():
@@ -23,15 +20,6 @@ def home():
 
 @app.route('/test-gsm', methods=['GET'])
 def test_gsm():
-    # لو المتغيرات فاضية، هنرجع القيمة اللي السيرفر شايفها عشان نعرف المشكلة فين بالظبط
-    if not GSM_API_URL or not GSM_API_KEY:
-        return jsonify({
-            "status": "error",
-            "message": "Environment variables are missing!",
-            "debug_url": GSM_API_URL,
-            "debug_key": "Exists" if GSM_API_KEY else "Missing"
-        }), 400
-    
     try:
         headers = {
             "Authorization": f"Bearer {GSM_API_KEY}",
