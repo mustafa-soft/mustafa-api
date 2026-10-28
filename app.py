@@ -1,7 +1,6 @@
 @app.route('/test-gsm', methods=['GET'])
 def test_gsm():
     try:
-        # تجربة إرسال المفتاح كمتغير في الرابط
         target_url = f"{GSM_API_URL}?key={GSM_API_KEY}"
         response = requests.get(target_url, timeout=15)
         
