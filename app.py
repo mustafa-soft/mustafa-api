@@ -7,8 +7,10 @@ app = Flask(__name__)
 CORS(app)
 
 # حط رابط الـ API ومفتاح التفعيل هنا مباشرة مؤقتاً للتجربة
-GSM_API_URL = "حط_رابط_الـ_api_هنا"
-GSM_API_KEY = "حط_مفتاح_التفعيل_هنا"
+GSM_API_URL = "https://api2-gsm.elbroos.com/"
+GSM_API_KEY = "hNDcyNGZmMTkMjMyMTQ1ZWI="
+
+
 
 @app.route('/', methods=['GET'])
 def home():
