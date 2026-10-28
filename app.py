@@ -16,7 +16,7 @@ def home_page():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Mustafa Soft - GSM Dashboard</title>
+        <title>Mustafa Soft - لوحة التحكم الشاملة</title>
         <style>
             body {
                 background-color: #0f172a;
@@ -30,7 +30,7 @@ def home_page():
                 min-height: 100vh;
             }
             .container {
-                max-width: 600px;
+                max-width: 650px;
                 width: 100%;
             }
             .card {
@@ -64,16 +64,16 @@ def home_page():
             }
             .btn-grid {
                 display: grid;
-                grid-template-columns: 1fr 1fr;
+                grid-template-columns: 1fr 1fr 1fr;
                 gap: 10px;
             }
             .btn {
                 background-color: #2563eb;
                 color: white;
-                padding: 12px;
+                padding: 10px;
                 border-radius: 8px;
                 text-decoration: none;
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: bold;
                 transition: background 0.3s;
                 display: block;
@@ -89,22 +89,42 @@ def home_page():
                 background-color: #38bdf8;
                 color: #0f172a;
             }
-            .btn-secondary {
-                background-color: #334155;
-                border: 1px solid #475569;
-                color: #e2e8f0;
+            .imei-box {
+                margin-top: 15px;
+                background: #0f172a;
+                padding: 12px;
+                border-radius: 8px;
+                border: 1px solid #334155;
             }
-            .btn-secondary:hover { background-color: #475569; }
+            .imei-input {
+                width: 70%;
+                padding: 8px;
+                border-radius: 6px;
+                border: 1px solid #475569;
+                background: #1e293b;
+                color: white;
+                font-size: 13px;
+            }
+            .imei-btn {
+                background-color: #10b981;
+                color: white;
+                border: none;
+                padding: 9px 15px;
+                border-radius: 6px;
+                font-weight: bold;
+                cursor: pointer;
+            }
+            .imei-btn:hover { background-color: #059669; }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="card">
                 <h1>Mustafa Soft Services</h1>
-                <p>بوابة خدمات السوفتوير والتفعيل الرسمية</p>
+                <p>بوابة خدمات الصيانة وبرمجيات الهواتف الذكية</p>
                 <div class="status">● السيرفر متصل ويعمل (Live)</div>
                 
-                <div class="section-title">أدوات البرمجيات والتفعيل (Software Tools)</div>
+                <div class="section-title">أدوات السوفتوير والتفعيل الرسمية</div>
                 <div class="btn-grid">
                     <a href="/tool/chimera" class="btn btn-tool" target="_blank">Chimera Tool</a>
                     <a href="/tool/unlocktool" class="btn btn-tool" target="_blank">UnlockTool</a>
@@ -114,12 +134,18 @@ def home_page():
                     <a href="/tool/pandora" class="btn btn-tool" target="_blank">Pandora Box</a>
                 </div>
 
-                <div class="section-title">خدمات السيرفر والـ API</div>
-                <div class="btn-grid">
-                    <a href="/test-gsm" class="btn" target="_blank">فحص اتصال GSM</a>
-                    <a href="/account-info" class="btn" target="_blank">معلومات الحساب</a>
-                    <a href="/services-list" class="btn btn-secondary" target="_blank">قائمة الخدمات</a>
-                    <a href="/check-imei" class="btn btn-secondary" target="_blank">فحص IMEI</a>
+                <div class="section-title">فحص الأجهزة (IMEI)</div>
+                <div class="imei-box">
+                    <form action="/check-imei" method="GET" target="_blank">
+                        <input type="text" name="imei" class="imei-input" placeholder="أدخل رقم الـ IMEI هنا..." required>
+                        <button type="submit" class="imei-btn">فحص</button>
+                    </form>
+                </div>
+
+                <div class="section-title">إدارة الحساب والسيرفر</div>
+                <div class="btn-grid" style="grid-template-columns: 1fr 1fr;">
+                    <a href="/account-info" class="btn" style="background-color: #334155;" target="_blank">معلومات الحساب</a>
+                    <a href="/services-list" class="btn" style="background-color: #334155;" target="_blank">قائمة الخدمات</a>
                 </div>
             </div>
         </div>
@@ -156,10 +182,6 @@ def get_tool_info(tool_name):
         "message": "الخدمة متوفرة وجاهزة للتفعيل والتجديد"
     })
 
-@app.route('/test-gsm', methods=['GET'])
-def test_gsm():
-    return jsonify(call_gsm_api("test"))
-
 @app.route('/account-info', methods=['GET'])
 def account_info():
     return jsonify(call_gsm_api("account_info"))
@@ -170,7 +192,15 @@ def services_list():
 
 @app.route('/check-imei', methods=['GET'])
 def check_imei():
-    return jsonify(call_gsm_api("imei_service"))
+    imei_number = request.args.get('imei', 'Not Provided')
+    # محاولة الاتصال بـ API الفحص الخارجي
+    api_result = call_gsm_api(f"imei_service&imei={imei_number}")
+    
+    return jsonify({
+        "checked_imei": imei_number,
+        "api_connection": api_result,
+        "note": "إذا ظهر خطأ 403، فهذا يؤكد أن حسابك يحتاج إلى تفعيل الرصيد أو باقة الموزعين من لوحة تحكم المزود لكي يستجيب لطلبات الـ IMEI."
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
