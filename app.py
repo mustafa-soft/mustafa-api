@@ -9,96 +9,132 @@ GSM_API_URL = "https://api2-gsm.elbroos.com/"
 GSM_API_KEY = "BXVzdGFmYW9wZW44OEBnbWFpbC5jb206MWE4MjY5YTUwZTFkZmVhNDcyNGZmMTlkMjMyMTQ1ZWI="
 
 @app.route('/', methods=['GET'])
-def home():
-    # تصميم واجهة ويب خفيفة وشيك للموقع بدل الشاشة البيضاء
+let home(): # type: ignore
+    pass
+
+@app.route('/', methods=['GET'])
+def home_page():
     html_content = """
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Mustafa Soft API</title>
+        <title>Mustafa Soft - لوحة التحكم</title>
         <style>
             body {
                 background-color: #0f172a;
                 color: #f8fafc;
                 font-family: Tahoma, sans-serif;
+                margin: 0;
+                padding: 20px;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                height: 100vh;
-                margin: 0;
+                min-height: 100vh;
+            }
+            .container {
+                max-width: 500px;
+                width: 100%;
             }
             .card {
                 background-color: #1e293b;
                 border: 2px solid #3b82f6;
-                padding: 30px;
-                border-radius: 12px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+                padding: 25px;
+                border-radius: 14px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.4);
                 text-align: center;
-                max-width: 400px;
-                width: 90%;
+                margin-bottom: 20px;
             }
-            h1 { color: #60a5fa; font-size: 24px; margin-bottom: 10px; }
-            p { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
+            h1 { color: #60a5fa; font-size: 22px; margin-bottom: 5px; }
+            p { color: #94a3b8; font-size: 13px; margin-bottom: 15px; }
             .status {
                 display: inline-block;
                 background-color: #065f46;
                 color: #34d399;
-                padding: 6px 14px;
+                padding: 5px 12px;
                 border-radius: 20px;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: bold;
+                margin-bottom: 15px;
             }
-            a {
-                display: inline-block;
-                margin-top: 20px;
+            .btn-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 15px;
+            }
+            .btn {
                 background-color: #3b82f6;
                 color: white;
-                padding: 10px 20px;
+                padding: 10px;
                 border-radius: 8px;
                 text-decoration: none;
+                font-size: 13px;
                 font-weight: bold;
                 transition: background 0.3s;
+                display: block;
+                text-align: center;
             }
-            a:hover { background-color: #2563eb; }
+            .btn:hover { background-color: #2563eb; }
+            .btn-secondary { background-color: #334155; border: 1px solid #475569; }
+            .btn-secondary:hover { background-color: #475569; }
         </style>
     </head>
     <body>
-        <div class="card">
-            <h1>Mustafa Soft API</h1>
-            <p>نظام إدارة خدمات وربط الـ API يعمل بكفاءة عالية</p>
-            <div class="status">● السيرفر متصل ويعمل (Live)</div>
-            <br>
-            <a href="/test-gsm" target="_blank">فحص اتصال GSM API</a>
+        <div class="container">
+            <div class="card">
+                <h1>Mustafa Soft API</h1>
+                <p>بوابة خدمات الصيانة وبرمجيات الهواتف الذكية</p>
+                <div class="status">● السيرفر متصل ويعمل (Live)</div>
+                
+                <div class="btn-grid">
+                    <a href="/test-gsm" class="btn" target="_blank">فحص اتصال GSM</a>
+                    <a href="/account-info" class="btn" target="_blank">معلومات الحساب</a>
+                    <a href="/services-list" class="btn btn-secondary" target="_blank">قائمة الخدمات</a>
+                    <a href="/check-imei" class="btn btn-secondary" target="_blank">فحص الأجهزة (IMEI)</a>
+                </div>
+            </div>
         </div>
     </body>
     </html>
     """
     return html_content
 
-@app.route('/test-gsm', methods=['GET'])
-def test_gsm():
+def call_gsm_api(action_name):
     try:
-        target_url = f"{GSM_API_URL}?key={GSM_API_KEY}&action=account_info"
+        target_url = f"{GSM_API_URL}?key={GSM_API_KEY}&action={action_name}"
         response = requests.get(target_url, timeout=15)
-        
         try:
             res_data = response.json()
         except:
             res_data = response.text
-
-        return jsonify({
+        return {
             "status": "success",
             "gsm_status_code": response.status_code,
-            "response_data": res_data,
-            "note": "الحالة 403 تعني أن المفتاح بحاجة لتفعيل الرصيد أو باقة الموزعين من لوحة تحكم المزود."
-        })
+            "response_data": res_data
+        }
     except Exception as e:
-        return jsonify({
+        return {
             "status": "error",
             "message": str(e)
-        }), 500
+        }
+
+@app.route('/test-gsm', methods=['GET'])
+def test_gsm():
+    return jsonify(call_gsm_api("test"))
+
+@app.route('/account-info', methods=['GET'])
+def account_info():
+    return jsonify(call_gsm_api("account_info"))
+
+@app.route('/services-list', methods=['GET'])
+def services_list():
+    return jsonify(call_gsm_api("get_services"))
+
+@app.route('/check-imei', methods=['GET'])
+def check_imei():
+    return jsonify(call_gsm_api("imei_service"))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
