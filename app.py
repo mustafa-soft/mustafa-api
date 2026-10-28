@@ -9,10 +9,6 @@ GSM_API_URL = "https://api2-gsm.elbroos.com/"
 GSM_API_KEY = "BXVzdGFmYW9wZW44OEBnbWFpbC5jb206MWE4MjY5YTUwZTFkZmVhNDcyNGZmMTlkMjMyMTQ1ZWI="
 
 @app.route('/', methods=['GET'])
-let home(): # type: ignore
-    pass
-
-@app.route('/', methods=['GET'])
 def home_page():
     html_content = """
     <!DOCTYPE html>
