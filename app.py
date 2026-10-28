@@ -30,7 +30,7 @@ def home_page():
                 min-height: 100vh;
             }
             .container {
-                max-width: 650px;
+                max-width: 700px;
                 width: 100%;
             }
             .card {
@@ -62,18 +62,23 @@ def home_page():
                 border-bottom: 1px solid #334155;
                 padding-bottom: 5px;
             }
-            .btn-grid {
+            .btn-grid-16 {
                 display: grid;
-                grid-template-columns: 1fr 1fr 1fr;
-                gap: 10px;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 8px;
+            }
+            @media (max-width: 600px) {
+                .btn-grid-16 {
+                    grid-template-columns: repeat(2, 1fr);
+                }
             }
             .btn {
                 background-color: #2563eb;
                 color: white;
-                padding: 10px;
+                padding: 10px 5px;
                 border-radius: 8px;
                 text-decoration: none;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: bold;
                 transition: background 0.3s;
                 display: block;
@@ -97,24 +102,31 @@ def home_page():
                 border: 1px solid #334155;
             }
             .imei-input {
-                width: 70%;
+                width: 65%;
                 padding: 8px;
                 border-radius: 6px;
                 border: 1px solid #475569;
                 background: #1e293b;
                 color: white;
-                font-size: 13px;
+                font-size: 12px;
             }
             .imei-btn {
                 background-color: #10b981;
                 color: white;
                 border: none;
-                padding: 9px 15px;
+                padding: 8px 12px;
                 border-radius: 6px;
                 font-weight: bold;
                 cursor: pointer;
+                font-size: 12px;
             }
             .imei-btn:hover { background-color: #059669; }
+            .main-actions {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 15px;
+            }
         </style>
     </head>
     <body>
@@ -124,26 +136,36 @@ def home_page():
                 <p>بوابة خدمات الصيانة وبرمجيات الهواتف الذكية</p>
                 <div class="status">● السيرفر متصل ويعمل (Live)</div>
                 
-                <div class="section-title">أدوات السوفتوير والتفعيل الرسمية</div>
-                <div class="btn-grid">
-                    <a href="/tool/chimera" class="btn btn-tool" target="_blank">Chimera Tool</a>
+                <div class="section-title">أدوات السوفتوير والتفعيل (16 أداة معتمدة)</div>
+                <div class="btn-grid-16">
+                    <a href="/tool/chimera" class="btn btn-tool" target="_blank">Chimera</a>
                     <a href="/tool/unlocktool" class="btn btn-tool" target="_blank">UnlockTool</a>
-                    <a href="/tool/trtools" class="btn btn-tool" target="_blank">TRTools Pro</a>
+                    <a href="/tool/trtools" class="btn btn-tool" target="_blank">TRTools</a>
                     <a href="/tool/eft" class="btn btn-tool" target="_blank">EFT Pro</a>
                     <a href="/tool/umt" class="btn btn-tool" target="_blank">UMT Pro</a>
-                    <a href="/tool/pandora" class="btn btn-tool" target="_blank">Pandora Box</a>
+                    <a href="/tool/pandora" class="btn btn-tool" target="_blank">Pandora</a>
+                    <a href="/tool/sigma" class="btn btn-tool" target="_blank">SigmaPlus</a>
+                    <a href="/tool/octoplus" class="btn btn-tool" target="_blank">Octoplus</a>
+                    <a href="/tool/z3x" class="btn btn-tool" target="_blank">Z3X Box</a>
+                    <a href="/tool/hydra" class="btn btn-tool" target="_blank">Hydra Tool</a>
+                    <a href="/tool/dfx" class="btn btn-tool" target="_blank">DFX Tool</a>
+                    <a href="/tool/tfc" class="btn btn-tool" target="_blank">TFC Dongle</a>
+                    <a href="/tool/griffin" class="btn btn-tool" target="_blank">Griffin</a>
+                    <a href="/tool/cst" class="btn btn-tool" target="_blank">CST Tool</a>
+                    <a href="/tool/safu" class="btn btn-tool" target="_blank">Safu Tool</a>
+                    <a href="/tool/mrt" class="btn btn-tool" target="_blank">MRT Key</a>
                 </div>
 
                 <div class="section-title">فحص الأجهزة (IMEI)</div>
                 <div class="imei-box">
                     <form action="/check-imei" method="GET" target="_blank">
                         <input type="text" name="imei" class="imei-input" placeholder="أدخل رقم الـ IMEI هنا..." required>
-                        <button type="submit" class="imei-btn">فحص</button>
+                        <button type="submit" class="imei-btn">فحص الجهاز</button>
                     </form>
                 </div>
 
-                <div class="section-title">إدارة الحساب والسيرفر</div>
-                <div class="btn-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="section-title">إدارة الحساب والخدمات</div>
+                <div class="main-actions">
                     <a href="/account-info" class="btn" style="background-color: #334155;" target="_blank">معلومات الحساب</a>
                     <a href="/services-list" class="btn" style="background-color: #334155;" target="_blank">قائمة الخدمات</a>
                 </div>
@@ -178,28 +200,30 @@ def get_tool_info(tool_name):
     return jsonify({
         "status": "success",
         "tool": tool_name.upper(),
-        "service": f"Mustafa Soft Reseller Service for {tool_name.upper()}",
-        "message": "الخدمة متوفرة وجاهزة للتفعيل والتجديد"
+        "provider_status": "Connected",
+        "message": f"خدمات وتفعيل أداة {tool_name.upper()} عبر Mustafa Soft"
     })
 
 @app.route('/account-info', methods=['GET'])
 def account_info():
-    return jsonify(call_gsm_api("account_info"))
+    # استدعاء معلومات الحساب من المزود الفعلي
+    result = call_gsm_api("account_info")
+    return jsonify(result)
 
 @app.route('/services-list', methods=['GET'])
 def services_list():
-    return jsonify(call_gsm_api("get_services"))
+    # استدعاء قائمة الخدمات الفعلية من المزود
+    result = call_gsm_api("get_services")
+    return jsonify(result)
 
 @app.route('/check-imei', methods=['GET'])
 def check_imei():
     imei_number = request.args.get('imei', 'Not Provided')
-    # محاولة الاتصال بـ API الفحص الخارجي
     api_result = call_gsm_api(f"imei_service&imei={imei_number}")
-    
     return jsonify({
         "checked_imei": imei_number,
         "api_connection": api_result,
-        "note": "إذا ظهر خطأ 403، فهذا يؤكد أن حسابك يحتاج إلى تفعيل الرصيد أو باقة الموزعين من لوحة تحكم المزود لكي يستجيب لطلبات الـ IMEI."
+        "note": "إذا ظهر خطأ 403، فهذا يعني أن حسابك يحتاج إلى تفعيل الرصيد أو باقة الموزعين من لوحة تحكم المزود."
     })
 
 if __name__ == '__main__':
