@@ -16,7 +16,7 @@ def home_page():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Mustafa Soft - لوحة التحكم</title>
+        <title>Mustafa Soft - GSM Dashboard</title>
         <style>
             body {
                 background-color: #0f172a;
@@ -30,7 +30,7 @@ def home_page():
                 min-height: 100vh;
             }
             .container {
-                max-width: 500px;
+                max-width: 600px;
                 width: 100%;
             }
             .card {
@@ -38,32 +38,39 @@ def home_page():
                 border: 2px solid #3b82f6;
                 padding: 25px;
                 border-radius: 14px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+                box-shadow: 0 10px 25px rgba(0,0,0,0.5);
                 text-align: center;
                 margin-bottom: 20px;
             }
-            h1 { color: #60a5fa; font-size: 22px; margin-bottom: 5px; }
+            h1 { color: #60a5fa; font-size: 24px; margin-bottom: 5px; }
             p { color: #94a3b8; font-size: 13px; margin-bottom: 15px; }
             .status {
                 display: inline-block;
                 background-color: #065f46;
                 color: #34d399;
-                padding: 5px 12px;
+                padding: 6px 14px;
                 border-radius: 20px;
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: bold;
-                margin-bottom: 15px;
+                margin-bottom: 20px;
+            }
+            .section-title {
+                color: #38bdf8;
+                font-size: 14px;
+                margin: 15px 0 10px 0;
+                text-align: right;
+                border-bottom: 1px solid #334155;
+                padding-bottom: 5px;
             }
             .btn-grid {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
                 gap: 10px;
-                margin-top: 15px;
             }
             .btn {
-                background-color: #3b82f6;
+                background-color: #2563eb;
                 color: white;
-                padding: 10px;
+                padding: 12px;
                 border-radius: 8px;
                 text-decoration: none;
                 font-size: 13px;
@@ -72,23 +79,47 @@ def home_page():
                 display: block;
                 text-align: center;
             }
-            .btn:hover { background-color: #2563eb; }
-            .btn-secondary { background-color: #334155; border: 1px solid #475569; }
+            .btn:hover { background-color: #1d4ed8; }
+            .btn-tool {
+                background-color: #1e293b;
+                border: 1px solid #38bdf8;
+                color: #38bdf8;
+            }
+            .btn-tool:hover {
+                background-color: #38bdf8;
+                color: #0f172a;
+            }
+            .btn-secondary {
+                background-color: #334155;
+                border: 1px solid #475569;
+                color: #e2e8f0;
+            }
             .btn-secondary:hover { background-color: #475569; }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="card">
-                <h1>Mustafa Soft API</h1>
-                <p>بوابة خدمات الصيانة وبرمجيات الهواتف الذكية</p>
+                <h1>Mustafa Soft Services</h1>
+                <p>بوابة خدمات السوفتوير والتفعيل الرسمية</p>
                 <div class="status">● السيرفر متصل ويعمل (Live)</div>
                 
+                <div class="section-title">أدوات البرمجيات والتفعيل (Software Tools)</div>
+                <div class="btn-grid">
+                    <a href="/tool/chimera" class="btn btn-tool" target="_blank">Chimera Tool</a>
+                    <a href="/tool/unlocktool" class="btn btn-tool" target="_blank">UnlockTool</a>
+                    <a href="/tool/trtools" class="btn btn-tool" target="_blank">TRTools Pro</a>
+                    <a href="/tool/eft" class="btn btn-tool" target="_blank">EFT Pro</a>
+                    <a href="/tool/umt" class="btn btn-tool" target="_blank">UMT Pro</a>
+                    <a href="/tool/pandora" class="btn btn-tool" target="_blank">Pandora Box</a>
+                </div>
+
+                <div class="section-title">خدمات السيرفر والـ API</div>
                 <div class="btn-grid">
                     <a href="/test-gsm" class="btn" target="_blank">فحص اتصال GSM</a>
                     <a href="/account-info" class="btn" target="_blank">معلومات الحساب</a>
                     <a href="/services-list" class="btn btn-secondary" target="_blank">قائمة الخدمات</a>
-                    <a href="/check-imei" class="btn btn-secondary" target="_blank">فحص الأجهزة (IMEI)</a>
+                    <a href="/check-imei" class="btn btn-secondary" target="_blank">فحص IMEI</a>
                 </div>
             </div>
         </div>
@@ -115,6 +146,15 @@ def call_gsm_api(action_name):
             "status": "error",
             "message": str(e)
         }
+
+@app.route('/tool/<tool_name>', methods=['GET'])
+def get_tool_info(tool_name):
+    return jsonify({
+        "status": "success",
+        "tool": tool_name.upper(),
+        "service": f"Mustafa Soft Reseller Service for {tool_name.upper()}",
+        "message": "الخدمة متوفرة وجاهزة للتفعيل والتجديد"
+    })
 
 @app.route('/test-gsm', methods=['GET'])
 def test_gsm():
