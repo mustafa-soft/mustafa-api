@@ -4,9 +4,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # لضمان السماح بالاتصال من الواجهة الأمامية على Vercel
+CORS(app)
 
-# قراءة المتغيرات البيئية التي تم ضبطها في Render
 GSM_API_URL = os.environ.get('GSM_API_URL')
 GSM_API_KEY = os.environ.get('GSM_API_KEY')
 
@@ -27,13 +26,11 @@ def test_gsm():
         }), 400
     
     try:
-        # إرسال طلب تجريبي أو جلب الخدمات حسب توثيق GSMServer
         headers = {
             "Authorization": f"Bearer {GSM_API_KEY}",
             "Content-Type": "application/json"
         }
         
-        # يمكنك تعديل الـ Endpoint أو الـ Payload بناءً على وثائق DHRU Fusion / GSMServer
         response = requests.get(GSM_API_URL, headers=headers, timeout=15)
         
         return jsonify({
