@@ -1,81 +1,52 @@
+import os
+import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # لضمان السماح بالاتصال من الواجهة الأمامية على Vercel
 
-TOOLS = [
-    "chimera",
-    "tsm",
-    "unlocktool",
-    "eft",
-    "octopus",
-    "haafedh",
-    "sigma",
-    "z3x",
-    "pandora",
-    "sk",
-    "tft",
-    "muslim_odin",
-    "xiaomi",
-    "services",
-    "dft_multi",
-]
+# قراءة المتغيرات البيئية التي تم ضبطها في Render
+GSM_API_URL = os.environ.get('GSM_API_URL')
+GSM_API_KEY = os.environ.get('GSM_API_KEY')
 
-
-@app.route("/")
+@app.route('/', methods=['GET'])
 def home():
-  cards_html = ""
-  for tool in TOOLS:
-    cards_html += (
-        '<div class="card"><div class="card-title">'
-        + tool.upper()
-        + '</div><a href="/'
-        + tool
-        + '" target="_blank" class="btn-api">GET /'
-        + tool
-        + "</a></div>"
-    )
+    return jsonify({
+        "status": "online",
+        "service": "Mustafa Soft API",
+        "message": "Backend is running successfully!"
+    })
 
-  return (
-      "<!DOCTYPE html><html lang='ar' dir='rtl'><head><meta charset='UTF-8'>"
-      "<title>Mustafa Soft - API Dashboard</title><style>"
-      "body{background:#0b1120;color:#f8fafc;font-family:sans-serif;padding:20px;text-align:center;}"
-      "h1{color:#38bdf8;margin-bottom:10px;}"
-      ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:15px;margin-top:20px;}"
-      ".card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:15px;text-align:left;}"
-      ".card-title{font-size:16px;font-weight:bold;color:#fff;margin-bottom:10px;}"
-      ".btn-api{display:block;background:#0284c7;color:#fff;text-decoration:none;padding:8px;border-radius:6px;text-align:center;font-size:12px;font-weight:bold;}"
-      ".btn-api:hover{background:#0369a1;}"
-      "</style></head><body>"
-      "<h1>Mustafa Soft - API Dashboard</h1>"
-      "<p>15 Maintenance Tools Control Center</p>"
-      '<div class="grid">'
-      + cards_html
-      + "</div></body></html>"
-  )
+@app.route('/test-gsm', methods=['GET'])
+def test_gsm():
+    if not GSM_API_URL or not GSM_API_KEY:
+        return jsonify({
+            "status": "error",
+            "message": "GSM API URL or Key is missing in environment variables!"
+        }), 400
+    
+    try:
+        # إرسال طلب تجريبي أو جلب الخدمات حسب توثيق GSMServer
+        headers = {
+            "Authorization": f"Bearer {GSM_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        # يمكنك تعديل الـ Endpoint أو الـ Payload بناءً على وثائق DHRU Fusion / GSMServer
+        response = requests.get(GSM_API_URL, headers=headers, timeout=15)
+        
+        return jsonify({
+            "status": "success",
+            "gsm_status_code": response.status_code,
+            "response_data": response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
-
-@app.route("/<tool_name>")
-def tool_route(tool_name):
-  if tool_name not in TOOLS:
-    return jsonify({"error": "Tool not found"}), 404
-  return jsonify(
-      {"reseller": "mustafa-soft", "tool": tool_name.upper(), "status": "Active"}
-  )
-
-
-@app.route("/<tool_name>/verify")
-def tool_verify(tool_name):
-  if tool_name not in TOOLS:
-    return jsonify({"error": "Tool not found"}), 404
-  return jsonify({
-      "verified": True,
-      "reseller": "mustafa-soft",
-      "tool": tool_name.upper(),
-      "status": "Ready",
-  })
-
-
-if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
