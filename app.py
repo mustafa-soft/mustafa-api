@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import hashlib
+import os
+import requests
 
 app = Flask(__name__)
 CORS(app)
+
 
 RESELLER_NAME = "mustafa-soft"
 RESELLER_EMAIL = "mustafa888105@gmail.com"
@@ -265,3 +267,32 @@ def create_activation():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
+import os
+import requests
+from flask import jsonify, request
+
+# أضف هذا الـ Route فقط بجانب الكود الحالي الخاص بواجهتك
+@app.route('/api/order', methods=['POST'])
+def send_order():
+    data = request.json
+    tool_name = data.get('toolName', 'أداة غير محددة')
+    user_phone = data.get('phone', '0900287738') # رقمك الظاهر في الواجهة
+    
+    # بيانات البوت (يفضل ضبطها في Environment Variables على Render)
+    TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', 'ضع_توكن_البوت_هنا')
+    TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', 'ضع_آيدي_الشات_هنا')
+    
+    message = f"🚨 طلب تفعيل جديد!\n\n🛠️ الأداة: {tool_name}\n📞 الهاتف: {user_phone}"
+    
+    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message
+    }
+    
+    response = requests.post(telegram_url, json=payload)
+    
+    if response.status_code == 200:
+        return jsonify({"success": True, "message": "تم الإرسال بنجاح"}), 200
+    else:
+        return jsonify({"success": False, "error": "فشل الإرسال"}), 500
