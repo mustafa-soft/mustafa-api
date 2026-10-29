@@ -1,8 +1,13 @@
 from flask import Flask, jsonify, request
+import requests
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
+
+# رابط الـ API الجديد بناءً على توثيق Swagger V2
+GSM_API_BASE = "https://api2-gsm.elbroos.com/api/reseller/v1"
+GSM_API_KEY = "BXVzdGFmYW9wZW44OEBnbWFpbC5jb206MWE4MjY5YTUwZTFkZmVhNDcyNGZmMTlkMjMyMTQ1ZWI="
 
 @app.route('/', methods=['GET'])
 def home_page():
@@ -129,7 +134,7 @@ def home_page():
         <div class="container">
             <div class="card">
                 <h1>Mustafa Soft Services</h1>
-                <p>بوابة خدمات الصيانة وبرمجيات الهواتف الذكية</p>
+                <p>بوابة خدمات الصيانة وبرمجيات الهواتف الذكية (API V2)</p>
                 <div class="status">● السيرفر يعمل بكفاءة عالية (Live)</div>
                 
                 <div class="section-title">أدوات السوفتوير والتفعيل (16 أداة معتمدة)</div>
@@ -160,7 +165,7 @@ def home_page():
                     </form>
                 </div>
 
-                <div class="section-title">إدارة الحساب والخدمات</div>
+                <div class="section-title">إدارة الحساب والخدمات (API V2)</div>
                 <div class="main-actions">
                     <a href="/account-info" class="btn" style="background-color: #334155;" target="_blank">معلومات الحساب</a>
                     <a href="/services-list" class="btn" style="background-color: #334155;" target="_blank">قائمة الخدمات</a>
@@ -172,47 +177,60 @@ def home_page():
     """
     return html_content
 
+def call_v2_api(endpoint_path):
+    try:
+        # تمرير المفتاح بالطريقة القياسية لـ V2 (Headers أو Bearer أو Query Param حسب المتاح)
+        headers = {
+            "Authorization": f"Bearer {GSM_API_KEY}",
+            "Accept": "application/json"
+        }
+        target_url = f"{GSM_API_BASE}/{endpoint_path}?key={GSM_API_KEY}"
+        response = requests.get(target_url, headers=headers, timeout=15)
+        try:
+            res_data = response.json()
+        except:
+            res_data = response.text
+        return {
+            "status": "success",
+            "http_status": response.status_code,
+            "response_data": res_data
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 @app.route('/tool/<tool_name>', methods=['GET'])
 def get_tool_info(tool_name):
     return jsonify({
         "status": "success",
         "tool": tool_name.upper(),
-        "provider_status": "Active",
+        "api_version": "v2",
         "message": f"خدمات وتفعيل أداة {tool_name.upper()} متوفرة عبر Mustafa Soft بنجاح."
     })
 
 @app.route('/account-info', methods=['GET'])
 def account_info():
-    return jsonify({
-        "status": "success",
-        "account": "Mustafa Soft Admin",
-        "email": "mustafaopen88@gmail.com",
-        "balance": "Active Reseller Panel",
-        "currency": "USD"
-    })
+    # استدعاء مسار الحساب الجديد للنسخة الثانية /account
+    result = call_v2_api("account")
+    return jsonify(result)
 
 @app.route('/services-list', methods=['GET'])
 def services_list():
-    return jsonify({
-        "status": "success",
-        "total_services": 16,
-        "services": [
-            "Chimera Tool Activation", "UnlockTool License", "TRTools Pro", 
-            "EFT Pro", "UMT Pro", "Pandora Box", "SigmaPlus", "Octoplus Pro",
-            "Z3X Box", "Hydra Tool", "DFX Tool", "TFC Dongle", "Griffin Tool",
-            "CST Tool", "Safu Tool", "MRT Key"
-        ]
-    })
+    # استدعاء مسار المنتجات والخدمات الجديد للنسخة الثانية /products
+    result = call_v2_api("products")
+    return jsonify(result)
 
 @app.route('/check-imei', methods=['GET'])
 def check_imei():
     imei_number = request.args.get('imei', 'Not Provided')
+    result = call_v2_api(f"order?imei={imei_number}")
     return jsonify({
         "status": "success",
         "checked_imei": imei_number,
-        "device_info": "تم فحص الجهاز بنجاح عبر بوابة Mustafa Soft",
-        "carrier": "Supported / Clean",
-        "blacklist_status": "Clean"
+        "api_v2_result": result,
+        "note": "إذا استمر ظهور خطأ 403، فهذا يؤكد أن مفتاح الحساب يتطلب تفعيل حزمة الموزعين من لوحة تحكم المزود."
     })
 
 if __name__ == '__main__':
