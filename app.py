@@ -10,10 +10,11 @@ WHATSAPP = "0900287738"
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN","9140932484:AAGY40tmC6cDS3yd6kjvt7t6ZvkkEfr1lKo")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID","8142874050")
 
-def send_telegram(tool,email,duration):
-    msg = f"🔔 {tool.upper()} - {duration} - {email} - {RESELLER_EMAIL}"
+def send_telegram(tool, email, duration, phone=None):
+    phone_str = f" - 📞 {phone}" if phone else ""
+    msg = f"🚨 طلب تفعيل جديد!\n\n🛠️ الأداة: {tool.upper()}\n⏳ المدة: {duration}\n📧 الإيميل: {email}{phone_str}\n👤 الموزع: {RESELLER_EMAIL}"
     try:
-        r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", params={"chat_id":CHAT_ID,"text":msg}, timeout=20)
+        r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", params={"chat_id": CHAT_ID, "text": msg}, timeout=20)
         return True, r.json()
     except Exception as e:
         return False, str(e)
@@ -21,8 +22,8 @@ def send_telegram(tool,email,duration):
 def verify_response(tool="generic"):
     return jsonify({"email": RESELLER_EMAIL,"verified": True,"tool": tool,"telegram": "working","fixed_405": True,"deployed": True,"beautiful_ui": True,"auto": True})
 
-def activation_response(tool,email,duration):
-    ok,tg = send_telegram(tool,email,duration)
+def activation_response(tool, email, duration, phone=None):
+    ok, tg = send_telegram(tool, email, duration, phone)
     return jsonify({"status": "success","verified": True,"email": RESELLER_EMAIL,"tool": tool,"telegram_sent": ok,"auto": True})
 
 @app.route('/', methods=['GET','POST','PUT','DELETE','OPTIONS'])
@@ -37,12 +38,12 @@ def create_activation():
     if request.args: data.update(request.args.to_dict())
     try: data.update(request.get_json(force=True, silent=True) or {})
     except: pass
-    return activation_response(data.get('tool','chimera'), data.get('email','test@gmail.com'), data.get('duration','12 months'))
+    return activation_response(data.get('tool','chimera'), data.get('email','test@gmail.com'), data.get('duration','12 months'), data.get('phone', '0900287738'))
 
 @app.route('/api/test-bot', methods=['GET','POST','PUT','DELETE','OPTIONS'])
 def test_bot():
-    ok,tg = send_telegram("TEST","test@gmail.com","12 months")
-    return jsonify({"success": ok,"email": RESELLER_EMAIL,"telegram_response": tg})
+    ok, tg = send_telegram("TEST", "test@gmail.com", "12 months", "0900287738")
+    return jsonify({"success": ok, "email": RESELLER_EMAIL, "telegram_response": tg})
 
 @app.route('/dhru/verify', methods=['GET','POST','PUT','DELETE','OPTIONS'])
 @app.route('/dhrufusionpro/verify', methods=['GET','POST','PUT','DELETE','OPTIONS'])
@@ -54,7 +55,7 @@ def dhru():
     try: data.update(request.get_json(force=True, silent=True) or {})
     except: pass
     if data.get('email') or data.get('duration') or request.method == 'POST':
-        return activation_response("DHRU Fusion Pro", data.get('email','test@gmail.com'), data.get('duration','12 months'))
+        return activation_response("DHRU Fusion Pro", data.get('email','test@gmail.com'), data.get('duration','12 months'), data.get('phone'))
     return verify_response("DHRU Fusion Pro")
 
 @app.route('/<tool>/verify', methods=['GET','POST','PUT','DELETE','OPTIONS'])
@@ -64,8 +65,8 @@ def generic_tool_verify(tool):
     if request.args: data.update(request.args.to_dict())
     try: data.update(request.get_json(force=True, silent=True) or {})
     except: pass
-    if data.get('email') or data.get('duration'):
-        return activation_response(tool, data.get('email','test@gmail.com'), data.get('duration','12 months'))
+    if data.get('email') or data.get('duration') or request.method == 'POST':
+        return activation_response(tool, data.get('email','test@gmail.com'), data.get('duration','12 months'), data.get('phone'))
     return verify_response(tool)
 
 @app.errorhandler(404)
