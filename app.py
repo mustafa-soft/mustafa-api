@@ -48,24 +48,24 @@ def check_account():
         if not API_KEY:
             return render_template_string(HTML_TEMPLATE, status_code=400, response_data="Error: API Key is missing!", is_html=True)
 
-        # في أنظمة DHRU Fusion Pro، رابط الـ API غالباً ما يكون عبر /api/index.php أو إرسال POST
+        # معاملات DHRU Fusion Pro الرسمية
         payload = {
-            'username': '', # بعض النسخ لا تتطلب يوزر مع المفتاح، أو تتطلب المفتاح فقط
             'api_access_key': API_KEY,
-            'action': 'accountinfo'
+            'action': 'accountinfo',
+            'format': 'json'
         }
         
-        # تجربة إرسال طلب POST إلى مسار الـ API المعتمد في DHRU
-        api_endpoints = [
+        # الروابط المحتملة للـ API في نظام DHRU
+        endpoints = [
             f"{BASE_URL.rstrip('/')}/api/index.php",
-            f"{BASE_URL.rstrip('/')}/includes/api.php",
-            f"{BASE_URL.rstrip('/')}/api.php"
+            f"{BASE_URL.rstrip('/')}/api.php",
+            f"{BASE_URL.rstrip('/')}/includes/api.php"
         ]
         
         response = None
-        for url in api_endpoints:
+        for url in endpoints:
             try:
-                res = requests.post(url, data=payload, timeout=5)
+                res = requests.post(url, data=payload, timeout=6)
                 if res.status_code == 200 and "<html" not in res.text.lower():
                     response = res
                     break
@@ -74,8 +74,19 @@ def check_account():
             except:
                 continue
                 
+        if not response or "<html" in response.text.lower():
+            # محاولة أخيرة عبر GET مع الـ parameters
+            for url in endpoints:
+                try:
+                    res = requests.get(url, params=payload, timeout=6)
+                    if res.status_code == 200 and "<html" not in res.text.lower():
+                        response = res
+                        break
+                except:
+                    continue
+
         if not response:
-            response = requests.post(f"{BASE_URL.rstrip('/')}/index.php", data=payload)
+            return render_template_string(HTML_TEMPLATE, status_code=500, response_data="Error: Could not reach DHRU API endpoints.", is_html=True)
 
         try:
             res_data = response.json()
