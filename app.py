@@ -4,15 +4,26 @@ import requests
 
 app = Flask(__name__)
 
-ELBROOS_API_TOKEN = os.environ.get('ELBROOS_API_TOKEN')
+# البحث عن المتغير بأكثر من احتمال لاسم المفتاح لتجنب أي خطأ في الحفظ على Render
+ELBROOS_API_TOKEN = (
+    os.environ.get('ELBROOS_API_TOKEN') or 
+    os.environ.get('ELBROOS_API_KEY') or
+    os.environ.get('ELBROOS_TOKEN')
+)
+
 BASE_URL = os.environ.get('ELBROOS_BASE_URL', 'https://api2-gsm.elbroos.com/api/reseller/v1')
 
 @app.route('/check-account', methods=['GET'])
 def check_account():
     try:
-        # تجربة إرسال المفتاح مباشرة أو بطريقة أخرى يطلبها النظام
+        if not ELBROOS_API_TOKEN:
+            return jsonify({
+                'status': 'error',
+                'message': 'Token is missing! Please check the Environment Variables names on Render.'
+            }), 400
+
         headers = {
-            'Authorization': ELBROOS_API_TOKEN,  # بدون كلمة Bearer
+            'Authorization': f'Bearer {ELBROOS_API_TOKEN}',
             'Content-Type': 'application/json',
             'Accept': 'application/json'
         }
