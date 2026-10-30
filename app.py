@@ -19,14 +19,14 @@ def check_account():
         if not API_KEY:
             return jsonify({'status': 'error', 'message': 'API Key is missing!'}), 400
 
-        # نظام DHRU Fusion يقبل غالباً طريقة GET مع تمرير المعاملات في الرابط
+        # في DHRU Fusion غالباً ما يكون مسار الـ API عبر api.php أو ajax.php
         params = {
             'api_access_key': API_KEY,
             'action': 'accountinfo'
         }
         
-        # استخدام GET مع params لتجنب خطأ 405 Method Not Allowed
-        response = requests.get(f'{BASE_URL}/index.php', params=params)
+        # تجربة مسار api.php المخصص للـ API في DHRU
+        response = requests.get(f'{BASE_URL}/api.php', params=params)
         
         try:
             res_data = response.json()
