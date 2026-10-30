@@ -48,34 +48,25 @@ def check_account():
         if not API_KEY:
             return render_template_string(HTML_TEMPLATE, status_code=400, response_data="Error: API Key is missing in environment variables!", is_html=True)
 
-        # إعدادات طلب DHRU Fusion Pro الرسمية
-        url = f"{BASE_URL.rstrip('/')}/includes/api.php"
+        # المسار الرسمي والمعتمد لـ DHRU Fusion Pro API
+        url = f"{BASE_URL.rstrip('/')}/api/index.php"
+        
+        # هيكل البيانات القياسي للطلب
         payload = {
             'api_access_key': API_KEY,
-            'action': 'accountinfo'
+            'action': 'accountinfo',
+            'format': 'json'
         }
         
-        # تنفيذ طلب POST لنظام DHRU
+        # إرسال الطلب عبر POST
         response = requests.post(url, data=payload, timeout=10)
         
-        # فحص الاستجابة
         try:
             res_data = response.json()
             is_html = False
         except:
             res_data = response.text
             is_html = "<html" in res_data.lower()
-            
-            # إذا كان المسار بحاجة لتجربة api.php مباشرة
-            if is_html:
-                alt_url = f"{BASE_URL.rstrip('/')}/api.php"
-                res_alt = requests.post(alt_url, data=payload, timeout=10)
-                try:
-                    res_data = res_alt.json()
-                    response = res_alt
-                    is_html = False
-                except:
-                    pass
 
         return render_template_string(HTML_TEMPLATE, status_code=response.status_code, response_data=res_data, is_html=is_html)
 
