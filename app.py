@@ -33,7 +33,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="card">
         <h2>لوحة تحكم الموزع - Elbroos</h2>
-        <div class="status {% if status_code == 200 %}success{% else %}error{% endif %}">
+        <div class="status {% if status_code == 200 and not is_html %}success{% else %}error{% endif %}">
             حالة الاتصال: {{ status_code }}
         </div>
         <pre>{{ response_data }}</pre>
@@ -46,30 +46,48 @@ HTML_TEMPLATE = """
 def check_account():
     try:
         if not API_KEY:
-            return render_template_string(HTML_TEMPLATE, status_code=400, response_data="Error: API Key is missing in environment variables!")
+            return render_template_string(HTML_TEMPLATE, status_code=400, response_data="Error: API Key is missing!", is_html=True)
 
-        # في أنظمة DHRU Fusion، مسار الـ API يعتمد غالباً على الـ action مع الـ api_access_key
-        params = {
+        # في أنظمة DHRU Fusion Pro، رابط الـ API غالباً ما يكون عبر /api/index.php أو إرسال POST
+        payload = {
+            'username': '', # بعض النسخ لا تتطلب يوزر مع المفتاح، أو تتطلب المفتاح فقط
             'api_access_key': API_KEY,
             'action': 'accountinfo'
         }
         
-        # تجربة الرابط الأساسي مع مجلد api أو api.php
-        response = requests.get(f"{BASE_URL.rstrip('/')}/api.php", params=params)
+        # تجربة إرسال طلب POST إلى مسار الـ API المعتمد في DHRU
+        api_endpoints = [
+            f"{BASE_URL.rstrip('/')}/api/index.php",
+            f"{BASE_URL.rstrip('/')}/includes/api.php",
+            f"{BASE_URL.rstrip('/')}/api.php"
+        ]
         
-        # إذا أعطى 404، نحاول على الرابط المباشر
-        if response.status_code == 404:
-            response = requests.get(f"{BASE_URL.rstrip('/')}/index.php", params=params)
+        response = None
+        for url in api_endpoints:
+            try:
+                res = requests.post(url, data=payload, timeout=5)
+                if res.status_code == 200 and "<html" not in res.text.lower():
+                    response = res
+                    break
+                elif response is None:
+                    response = res
+            except:
+                continue
+                
+        if not response:
+            response = requests.post(f"{BASE_URL.rstrip('/')}/index.php", data=payload)
 
         try:
             res_data = response.json()
+            is_html = False
         except:
             res_data = response.text
+            is_html = "<html" in res_data.lower()
 
-        return render_template_string(HTML_TEMPLATE, status_code=response.status_code, response_data=res_data)
+        return render_template_string(HTML_TEMPLATE, status_code=response.status_code, response_data=res_data, is_html=is_html)
 
     except Exception as e:
-        return render_template_string(HTML_TEMPLATE, status_code=500, response_data=str(e))
+        return render_template_string(HTML_TEMPLATE, status_code=500, response_data=str(e), is_html=True)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
