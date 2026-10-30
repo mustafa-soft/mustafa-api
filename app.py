@@ -16,10 +16,9 @@ def check_account():
             'Accept': 'application/json'
         }
         
-        # تجربة إرسال طلب GET أو POST (جربنا POST أولاً، ودعنا نرى الاستجابة)
-        response = requests.post(f'{BASE_URL}/account', headers=headers, json={})
+        # تغيير الطريقة إلى GET لأن الـ API يطلب ذلك
+        response = requests.get(f'{BASE_URL}/account', headers=headers)
         
-        # محاولة طباعة الرد كـ JSON، وإذا فشل نُظهر النص الخام لمعرفة السبب
         try:
             res_data = response.json()
         except:
