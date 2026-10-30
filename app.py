@@ -9,7 +9,7 @@ HTML_TEMPLATE = """
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>حساب Elbroos - DHRU Fusion</title>
+    <title>حساب Elbroos - SHRU Cloud</title>
     <style>
         body { font-family: Tahoma, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 20px; }
         .card { background: #1e293b; padding: 25px; border-radius: 12px; max-width: 700px; margin: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
@@ -22,7 +22,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="card">
-        <h2>لوحة حساب Elbroos</h2>
+        <h2>لوحة حساب Elbroos (SHRU Cloud)</h2>
         <div class="status {% if status_code == 200 %}success{% else %}error{% endif %}">
             كود الحالة: {{ status_code }}
         </div>
@@ -40,19 +40,24 @@ def check_account():
         if not API_KEY:
             return render_template_string(HTML_TEMPLATE, status_code=400, response_data="خطأ: مفتاح API غير موجود في متغيرات البيئة.")
 
-        BASE_URL = os.environ.get('GSM_API_URL') or os.environ.get('ELBROOS_BASE_URL', 'https://api2-gsm.elbroos.com')
+        BASE_URL = os.environ.get('GSM_API_URL') or os.environ.get('ELBROOS_BASE_URL', 'https://api-gsm.elbroos.com')
         
-        url = f"{BASE_URL.rstrip('/')}/api/index.php"
+        # المسار الصحيح المأخوذ من وثائق Swagger في الصورة
+        url = f"{BASE_URL.rstrip('/')}/api/shru"
         
-        # المعاملات القياسية والدقيقة لنظام DHRU Fusion Pro
-        params = {
-            'api_access_key': API_KEY.strip(),
-            'action': 'accountinfo',
-            'format': 'json'
+        # الهيكل الدقيق حسب وثائق SHRU Cloud
+        payload = {
+            "action": "account_info"
+        }
+        
+        # تمرير المفتاح عبر الـ Headers والـ Body لضمان القبول الكامل
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {API_KEY.strip()}",
+            "api-key": API_KEY.strip()
         }
 
-        # إرسال الطلب عبر GET كما يفضلها DHRU في بعض الإصدارات لتجنب مشاكل الـ Parameters
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
         
         try:
             res_json = response.json()
