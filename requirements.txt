@@ -1,4 +1,3 @@
-flask
+Flask
 flask-cors
-requests
 gunicorn
