@@ -11,7 +11,6 @@ API_KEY = (
 if API_KEY:
     API_KEY = API_KEY.strip()
 
-# رابط DHRU Fusion Pro الأساسي
 BASE_URL = os.environ.get('GSM_API_URL') or os.environ.get('ELBROOS_BASE_URL', 'https://api2-gsm.elbroos.com')
 
 @app.route('/check-account', methods=['GET'])
@@ -20,14 +19,14 @@ def check_account():
         if not API_KEY:
             return jsonify({'status': 'error', 'message': 'API Key is missing!'}), 400
 
-        # الطريقة الرسمية لنظام DHRU Fusion Pro لجلب معلومات الحساب
-        payload = {
+        # نظام DHRU Fusion يقبل غالباً طريقة GET مع تمرير المعاملات في الرابط
+        params = {
             'api_access_key': API_KEY,
             'action': 'accountinfo'
         }
         
-        # DHRU Fusion يستقبل الطلبات غالباً عبر POST أو GET مع الـ action
-        response = requests.post(f'{BASE_URL}/index.php', data=payload)
+        # استخدام GET مع params لتجنب خطأ 405 Method Not Allowed
+        response = requests.get(f'{BASE_URL}/index.php', params=params)
         
         try:
             res_data = response.json()
