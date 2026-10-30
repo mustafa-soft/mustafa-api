@@ -4,65 +4,44 @@ import requests
 
 app = Flask(__name__)
 
-ELBROOS_API_TOKEN = (
-    os.environ.get('ELBROOS_API_TOKEN') or 
-    os.environ.get('ELBROOS_API_KEY') or
-    os.environ.get('ELBROOS_TOKEN')
+# اعتماد المتغيرات الخاصة بـ DHRU Fusion Pro بدقة
+API_KEY = (
+    os.environ.get('GSM_API_KEY') or 
+    os.environ.get('ELBROOS_API_TOKEN')
 )
 
-# تنظيف المفتاح من أي مسافات مخفية في البداية أو النهاية
-if ELBROOS_API_TOKEN:
-    ELBROOS_API_TOKEN = ELBROOS_API_TOKEN.strip()
+BASE_URL = os.environ.get('GSM_API_URL') or os.environ.get('ELBROOS_BASE_URL', 'https://api2-gsm.elbroos.com/api/reseller/v1')
 
-BASE_URL = os.environ.get('ELBROOS_BASE_URL', 'https://api2-gsm.elbroos.com/api/reseller/v1')
+if API_KEY:
+    API_KEY = API_KEY.strip()
 
 @app.route('/check-account', methods=['GET'])
 def check_account():
     try:
-        if not ELBROOS_API_TOKEN:
+        if not API_KEY:
             return jsonify({
                 'status': 'error',
-                'message': 'Token is missing!'
+                'message': 'API Key is missing in environment variables!'
             }), 400
 
-        # قائمة بالتنسيقات المحتملة للترويسة
-        attempts = [
-            {'Authorization': f'Bearer {ELBROOS_API_TOKEN}'},
-            {'Authorization': ELBROOS_API_TOKEN},
-            {'token': ELBROOS_API_TOKEN},
-            {'X-API-KEY': ELBROOS_API_TOKEN}
-        ]
-
-        results = []
-        for header_auth in attempts:
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                **header_auth
-            }
-            res = requests.get(f'{BASE_URL}/account', headers=headers)
-            try:
-                data = res.json()
-            except:
-                data = res.text
-
-            results.append({
-                'header_used': list(header_auth.keys())[0],
-                'status_code': res.status_code,
-                'response': data
-            })
-            
-            # إذا نجح أي طلب (كود الاستجابة 200) نعيد النتيجة فوراً
-            if res.status_code == 200 and isinstance(data, dict) and data.get('status') != 'error':
-                return jsonify({
-                    'status': 'success',
-                    'working_format': header_auth,
-                    'data': data
-                }), 200
+        # نظام DHRU Fusion Pro يقبل المفتاح غالباً عبر ترويسة Authorization أو كمعامل، 
+        # وسنجرب الترويسة القياسية للنظام أو Bearer
+        headers = {
+            'Authorization': f'Bearer {API_KEY}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+        
+        response = requests.get(f'{BASE_URL}/account', headers=headers)
+        
+        try:
+            res_data = response.json()
+        except:
+            res_data = {"raw_text": response.text}
 
         return jsonify({
-            'status': 'test_completed',
-            'results': results
+            'status_code': response.status_code,
+            'dhru_response': res_data
         }), 200
 
     except Exception as e:
