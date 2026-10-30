@@ -4,7 +4,6 @@ import requests
 
 app = Flask(__name__)
 
-# جلب الـ Token من متغيرات البيئة على Render
 ELBROOS_API_TOKEN = os.environ.get('ELBROOS_API_TOKEN')
 BASE_URL = os.environ.get('ELBROOS_BASE_URL', 'https://api2-gsm.elbroos.com/api/reseller/v1')
 
@@ -13,17 +12,23 @@ def check_account():
     try:
         headers = {
             'Authorization': f'Bearer {ELBROOS_API_TOKEN}',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         }
         
-        # إرسال طلب POST إلى الـ API الخاص بـ Elbroos
+        # تجربة إرسال طلب GET أو POST (جربنا POST أولاً، ودعنا نرى الاستجابة)
         response = requests.post(f'{BASE_URL}/account', headers=headers, json={})
         
-        # إرجاع النتيجة
+        # محاولة طباعة الرد كـ JSON، وإذا فشل نُظهر النص الخام لمعرفة السبب
+        try:
+            res_data = response.json()
+        except:
+            res_data = {"raw_text": response.text}
+
         return jsonify({
-            'status': 'success',
-            'data': response.json()
-        }), response.status_code
+            'status_code': response.status_code,
+            'elbroos_response': res_data
+        }), 200
 
     except Exception as e:
         return jsonify({
