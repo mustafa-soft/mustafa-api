@@ -8,8 +8,6 @@ API_KEY = (
     os.environ.get('GSM_API_KEY') or 
     os.environ.get('ELBROOS_API_TOKEN')
 )
-if API_KEY:
-    API_KEY = API_KEY.strip()
 
 BASE_URL = os.environ.get('GSM_API_URL') or os.environ.get('ELBROOS_BASE_URL', 'https://api2-gsm.elbroos.com')
 
@@ -18,25 +16,21 @@ HTML_TEMPLATE = """
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>فحص حساب Elbroos</title>
     <style>
-        body { font-family: Tahoma, sans-serif; background-color: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #1e293b; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); width: 90%; max-width: 500px; text-align: center; }
-        h2 { color: #38bdf8; margin-bottom: 20px; }
-        .status { padding: 10px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; }
-        .success { background: #065f46; color: #34d399; }
-        .error { background: #7f1d1d; color: #f87171; }
-        pre { background: #0f172a; padding: 15px; border-radius: 8px; text-align: left; direction: ltr; overflow-x: auto; color: #e2e8f0; font-size: 14px; }
+        body { font-family: Tahoma, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 20px; }
+        .card { background: #1e293b; padding: 20px; border-radius: 10px; max-width: 600px; margin: auto; }
+        pre { background: #0f172a; padding: 15px; border-radius: 5px; color: #38bdf8; overflow-x: auto; text-align: left; direction: ltr; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>لوحة تحكم الموزع - Elbroos</h2>
-        <div class="status {% if status_code == 200 and not is_html %}success{% else %}error{% endif %}">
-            حالة الاتصال: {{ status_code }}
-        </div>
-        <pre>{{ response_data }}</pre>
+        <h2>تقرير الاتصال بـ Elbroos</h2>
+        <p><strong>المفتاح المستخدم:</strong> {{ key_status }}</p>
+        <p><strong>رابط القاعدة:</strong> {{ base_url }}</p>
+        <p><strong>كود الحالة:</strong> {{ status_code }}</p>
+        <h3>الاستجابة الخام:</h3>
+        <pre>{{ response_text }}</pre>
     </div>
 </body>
 </html>
@@ -44,61 +38,27 @@ HTML_TEMPLATE = """
 
 @app.route('/check-account', methods=['GET'])
 def check_account():
+    if not API_KEY:
+        return render_template_string(HTML_TEMPLATE, key_status="مفقود تماماً!", base_url=BASE_URL, status_code=0, response_text="Error: API Key is missing in Render environment variables.")
+
+    masked_key = API_KEY[:5] + "..." if len(API_KEY) > 5 else " قصير جداً"
+    
+    url = f"{BASE_URL.rstrip('/')}/api/index.php"
+    payload = {
+        'api_access_key': API_KEY.strip(),
+        'action': 'accountinfo',
+        'format': 'json'
+    }
+
     try:
-        if not API_KEY:
-            return render_template_string(HTML_TEMPLATE, status_code=400, response_data="Error: API Key is missing!", is_html=True)
-
-        # معاملات DHRU Fusion Pro الرسمية
-        payload = {
-            'api_access_key': API_KEY,
-            'action': 'accountinfo',
-            'format': 'json'
-        }
-        
-        # الروابط المحتملة للـ API في نظام DHRU
-        endpoints = [
-            f"{BASE_URL.rstrip('/')}/api/index.php",
-            f"{BASE_URL.rstrip('/')}/api.php",
-            f"{BASE_URL.rstrip('/')}/includes/api.php"
-        ]
-        
-        response = None
-        for url in endpoints:
-            try:
-                res = requests.post(url, data=payload, timeout=6)
-                if res.status_code == 200 and "<html" not in res.text.lower():
-                    response = res
-                    break
-                elif response is None:
-                    response = res
-            except:
-                continue
-                
-        if not response or "<html" in response.text.lower():
-            # محاولة أخيرة عبر GET مع الـ parameters
-            for url in endpoints:
-                try:
-                    res = requests.get(url, params=payload, timeout=6)
-                    if res.status_code == 200 and "<html" not in res.text.lower():
-                        response = res
-                        break
-                except:
-                    continue
-
-        if not response:
-            return render_template_string(HTML_TEMPLATE, status_code=500, response_data="Error: Could not reach DHRU API endpoints.", is_html=True)
-
-        try:
-            res_data = response.json()
-            is_html = False
-        except:
-            res_data = response.text
-            is_html = "<html" in res_data.lower()
-
-        return render_template_string(HTML_TEMPLATE, status_code=response.status_code, response_data=res_data, is_html=is_html)
-
+        response = requests.post(url, data=payload, timeout=10)
+        res_text = response.text
+        status_code = response.status_code
     except Exception as e:
-        return render_template_string(HTML_TEMPLATE, status_code=500, response_data=str(e), is_html=True)
+        res_text = str(e)
+        status_code = 500
+
+    return render_template_string(HTML_TEMPLATE, key_status=masked_key, base_url=url, status_code=status_code, response_text=res_text)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
