@@ -43,16 +43,17 @@ def check_account():
 
     masked_key = API_KEY[:5] + "..."
     
-    # تجربة الرابط الأساسي للـ API في DHRU عبر طريقة GET
-    url = f"{BASE_URL.rstrip('/')}/api/index.php"
-    params = {
+    # الرابط الأساسي لـ DHRU Fusion مع index.php
+    url = f"{BASE_URL.rstrip('/')}/index.php"
+    
+    # المعاملات القياسية التي تقبلها لوحات DHRU Fusion
+    payload = {
         'api_access_key': API_KEY.strip(),
-        'action': 'accountinfo',
-        'format': 'json'
+        'action': 'accountinfo'
     }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.post(url, data=payload, timeout=10)
         res_text = response.text
         status_code = response.status_code
     except Exception as e:
