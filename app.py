@@ -26,10 +26,8 @@ HTML_TEMPLATE = """
 <body>
     <div class="card">
         <h2>تقرير الاتصال بـ Elbroos</h2>
-        <p><strong>المفتاح المستخدم:</strong> {{ key_status }}</p>
-        <p><strong>رابط القاعدة:</strong> {{ base_url }}</p>
         <p><strong>كود الحالة:</strong> {{ status_code }}</p>
-        <h3>الاستجابة الخام:</h3>
+        <h3>الاستجابة:</h3>
         <pre>{{ response_text }}</pre>
     </div>
 </body>
@@ -39,14 +37,12 @@ HTML_TEMPLATE = """
 @app.route('/check-account', methods=['GET'])
 def check_account():
     if not API_KEY:
-        return render_template_string(HTML_TEMPLATE, key_status="مفقود!", base_url=BASE_URL, status_code=0, response_text="Error: API Key is missing.")
+        return render_template_string(HTML_TEMPLATE, status_code=0, response_text="Error: API Key is missing.")
 
-    masked_key = API_KEY[:5] + "..."
-    
-    # استخدام GET مع index.php والمعاملات القياسية لـ DHRU
-    url = f"{BASE_URL.rstrip('/')}/index.php"
+    # صيغة رابط الـ API المباشر في DHRU Fusion Pro
+    url = f"{BASE_URL.rstrip('/')}/api.php"
     params = {
-        'api_access_key': API_KEY.strip(),
+        'key': API_KEY.strip(),
         'action': 'accountinfo'
     }
 
@@ -54,11 +50,20 @@ def check_account():
         response = requests.get(url, params=params, timeout=10)
         res_text = response.text
         status_code = response.status_code
+        
+        # إذا أعطى 404 لـ api.php، نجرب الرابط الأساسي مع معامل الـ key
+        if status_code == 404:
+            url = f"{BASE_URL.rstrip('/')}/index.php"
+            params = {'api_access_key': API_KEY.strip(), 'action': 'accountinfo'}
+            response = requests.get(url, params=params, timeout=10)
+            res_text = response.text
+            status_code = response.status_code
+            
     except Exception as e:
         res_text = str(e)
         status_code = 500
 
-    return render_template_string(HTML_TEMPLATE, key_status=masked_key, base_url=url, status_code=status_code, response_text=res_text)
+    return render_template_string(HTML_TEMPLATE, status_code=status_code, response_text=res_text)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
