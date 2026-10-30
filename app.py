@@ -10,13 +10,13 @@ BASE_URL = os.environ.get('ELBROOS_BASE_URL', 'https://api2-gsm.elbroos.com/api/
 @app.route('/check-account', methods=['GET'])
 def check_account():
     try:
+        # تجربة إرسال المفتاح مباشرة أو بطريقة أخرى يطلبها النظام
         headers = {
-            'Authorization': f'Bearer {ELBROOS_API_TOKEN}',
+            'Authorization': ELBROOS_API_TOKEN,  # بدون كلمة Bearer
             'Content-Type': 'application/json',
             'Accept': 'application/json'
         }
         
-        # تغيير الطريقة إلى GET لأن الـ API يطلب ذلك
         response = requests.get(f'{BASE_URL}/account', headers=headers)
         
         try:
