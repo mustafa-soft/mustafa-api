@@ -20,7 +20,7 @@ HTML_TEMPLATE = """
     <style>
         body { font-family: Tahoma, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 20px; }
         .card { background: #1e293b; padding: 20px; border-radius: 10px; max-width: 600px; margin: auto; }
-        pre { background: #0f172a; padding: 15px; border-radius: 5px; color: #38bdf8; overflow-x: auto; text-align: left; direction: ltr; }
+        pre { background: #0f172a; padding: 15px; border-radius: 5px; color: #38bdf8; overflow-x: auto; text-align: left; direction: ltr; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -39,19 +39,20 @@ HTML_TEMPLATE = """
 @app.route('/check-account', methods=['GET'])
 def check_account():
     if not API_KEY:
-        return render_template_string(HTML_TEMPLATE, key_status="مفقود تماماً!", base_url=BASE_URL, status_code=0, response_text="Error: API Key is missing in Render environment variables.")
+        return render_template_string(HTML_TEMPLATE, key_status="مفقود!", base_url=BASE_URL, status_code=0, response_text="Error: API Key is missing.")
 
-    masked_key = API_KEY[:5] + "..." if len(API_KEY) > 5 else " قصير جداً"
+    masked_key = API_KEY[:5] + "..."
     
+    # تجربة الرابط الأساسي للـ API في DHRU عبر طريقة GET
     url = f"{BASE_URL.rstrip('/')}/api/index.php"
-    payload = {
+    params = {
         'api_access_key': API_KEY.strip(),
         'action': 'accountinfo',
         'format': 'json'
     }
 
     try:
-        response = requests.post(url, data=payload, timeout=10)
+        response = requests.get(url, params=params, timeout=10)
         res_text = response.text
         status_code = response.status_code
     except Exception as e:
