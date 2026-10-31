@@ -1,9 +1,9 @@
 from flask import Flask, send_from_directory, jsonify
-from flask_talisman import Talisman  # <--- تضعها في الأعلى هنا
+from flask_talisman import Talisman
 import os, datetime
 
 app = Flask(__name__)
-Talisman(app, content_security_policy=None)  # <--- تفعيلها هنا مباشرة تحت تعريف app
+Talisman(app, content_security_policy=None)
 
 @app.route('/')
 def home():
@@ -14,3 +14,6 @@ def home():
 @app.route('/api')
 def api():
     return jsonify({"status":"Mustafa GS"})
+
+if __name__ == '__main__':
+    app.run(debug=True)
