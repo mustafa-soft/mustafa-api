@@ -9,3 +9,5 @@ def home():
 @app.route('/api')
 def api():
     return jsonify({"status":"Mustafa GSM API is Running ✅","frontend":"mustafa-soft.vercel.app","time":str(datetime.datetime.now())})
+from flask_talisman import Talisman
+Talisman(app, content_security_policy=None)
