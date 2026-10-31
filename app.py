@@ -1,10 +1,11 @@
-from flask import Flask, jsonify
-import datetime
+from flask import Flask, send_from_directory, jsonify
+import os, datetime
 app = Flask(__name__)
-HTML = """<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>Mustafa Soft</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080a12;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{background:linear-gradient(135deg,#151a2d,#0f1428);border:1px solid #00e5ff33;border-radius:24px;padding:35px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 60px #00e5ff15}.logo{font-size:32px;font-weight:900;color:#00e5ff;letter-spacing:2px}.sub{color:#8892a4;font-size:13px;margin:8px 0 20px}.live{display:inline-flex;align-items:center;gap:8px;background:#00ff8822;border:1px solid #00ff8844;color:#00ff88;padding:6px 16px;border-radius:50px;font-size:12px;font-weight:700}.dot{width:8px;height:8px;background:#00ff88;border-radius:50%;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}} .info{background:#0004;border-radius:12px;padding:14px;margin:18px 0;color:#aaa;font-size:12px;line-height:1.6}.btn{display:block;background:#00e5ff;color:#000;padding:13px;border-radius:12px;text-decoration:none;font-weight:800;margin-top:10px}</style></head><body><div class="card"><div class="logo">MUSTAFA SOFT</div><div class="sub">Professional GSM Solutions</div><div class="live"><span class="dot"></span>LIVE • API Running</div><div class="info">✅ Fast Unlock & FRP<br>🔒 Secure API Access<br>🛠️ 24/7 Support<br>📍 Al Bauga, Sudan</div><a class="btn" href="/api">View API Status →</a><div style="margin-top:18px;color:#444;font-size:10px">© 2026 Mustafa Soft • mustafa-soft.vercel.app</div></div></body></html>"""
 @app.route('/')
 def home():
-    return HTML
+    if os.path.exists('index.html'):
+        return send_from_directory('.', 'index.html')
+    return 'index.html not found!'
 @app.route('/api')
 def api():
-    return jsonify({"status":"Mustafa GSM API is Running ✅","frontend":"mustafa-soft.vercel.app","galle_connected":False,"time":str(datetime.datetime.now())})
+    return jsonify({"status":"Mustafa GSM API is Running ✅","frontend":"mustafa-soft.vercel.app","time":str(datetime.datetime.now())})
