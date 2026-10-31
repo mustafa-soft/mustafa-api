@@ -3,7 +3,13 @@ from flask_talisman import Talisman
 import os, datetime
 
 app = Flask(__name__)
-Talisman(app, content_security_policy=None)
+
+# إعداد سياسة أمان المحتوى لتصبح خضراء وتحصل على A+
+csp = {
+    'default-src': ["'self'"]
+}
+
+Talisman(app, content_security_policy=csp)
 
 @app.route('/')
 def home():
