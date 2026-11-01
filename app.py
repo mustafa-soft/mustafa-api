@@ -1,26 +1,19 @@
-from flask import Flask, jsonify
+from flask import Flask
 
 app = Flask(__name__)
 
+@app.after_request
+def add_security_headers(response):
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=()'
+    return response
 
-@app.route("/")
+@app.route('/')
 def home():
-  return jsonify({
-      "status": "success",
-      "message": "API is running successfully!",
-      "author": "Mustafa",
-  })
+    return {"author": "Mustafa", "message": "API is running successfully!", "status": "success"}
 
-
-@app.route("/api/services", methods=["GET"])
-def get_services():
-  # قائمة تجريبية لاختبار ظهور البيانات بنجاح
-  sample_services = [
-      {"id": 1, "service_name": "IMEI Unlock - iPhone", "price": "10.0$"},
-      {"id": 2, "service_name": "FRP Bypass Service", "price": "5.0$"},
-  ]
-  return jsonify({"status": "success", "services": sample_services})
-
-
-if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    app.run(debug=True)
