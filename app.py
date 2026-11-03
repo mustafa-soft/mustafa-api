@@ -24,8 +24,11 @@ def test_gsm_connection():
     }
     
     try:
-        # يمكنك تعديل الـ endpoint هنا حسب وثائق الـ API الخاصة بهم (مثل /account/info أو غيرها)
-        response = requests.get(f"{api_url}/account/info", headers=headers)
+        # إزالة أي شرطة مائلة زائدة من نهاية الرابط ثم إضافة المسار المطلوب بدقة
+        base_url = api_url.strip().rstrip('/')
+        target_url = f"{base_url}/account/info"
+        
+        response = requests.get(target_url, headers=headers)
         
         return jsonify({
             "status_code": response.status_code,
