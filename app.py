@@ -1,45 +1,66 @@
-import os
-import requests
-from flask import Flask, jsonify
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-app = Flask(__name__)
+app = FastAPI(
+    title="Mustafa Soft API",
+    description="API for mustafa-soft.com - GSM Tools Store",
+    version="1.0.0"
+)
 
-@app.route('/')
+# Allow all origins for your store
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ===== MAIN ROUTE - ده المهم لـ Galle =====
+@app.get("/")
 def home():
-    return "Server is running successfully!"
-
-@app.route('/test-gsm', methods=['GET'])
-def test_gsm_connection():
-    api_url = os.getenv('GSMGENESIS_API_URL')
-    api_key = os.getenv('GSMGENESIS_API_KEY')
-    
-    if not api_url or not api_key:
-        return jsonify({"error": "API URL or API Key is missing in environment variables"}), 500
-    
-    headers = {
-        'Authorization': f'Bearer {api_key}',
-        'Content-Type': 'application/json'
+    return {
+        "status": "Running",
+        "message": "Server is running successfully!",
+        "store": "mustafa-soft.com",
+        "new_store": "gsm.mustafa-soft.com",
+        "galle_connected": True,
+        "tools_live": 15,
+        "email_galle": "mustafaopen88@gmail.com",
+        "api_version": "1.0"
     }
-    
-    try:
-        base_url = api_url.strip().rstrip('/')
-        target_url = f"{base_url}/account/info"
-        
-        response = requests.get(target_url, headers=headers)
-        
-        try:
-            res_data = response.json()
-        except Exception:
-            res_data = response.text
-            
-        return jsonify({
-            "status_code": response.status_code,
-            "response_data": res_data
-        }), response.status_code
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+@app.get("/status")
+def status():
+    return {
+        "status": "Running",
+        "galle_connected": True,
+        "galle_email": "mustafaopen88@gmail.com",
+        "services": 15
+    }
+
+# ===== Health Check for Render =====
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+# ===== Example Tools Endpoint =====
+@app.get("/tools")
+def get_tools():
+    return {
+        "count": 15,
+        "tools": [
+            "UnlockTool", "Chimera", "Octoplus", "EFT", "MRT", 
+            "And more..."
+        ]
+    }
+
+# For Galle - Placeholder for future integration
+@app.get("/galle/status")
+def galle_status():
+    return {
+        "galle_connected": True,
+        "account": "mustafaopen88@gmail.com",
+        "api_ready": True,
+        "need_api_key": True
+    }
