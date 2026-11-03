@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.mustafasoft.store",
+        "sha256_cert_fingerprints": ["6C:F0:6E:3D:18:34:B4:3F:94:0B:D7:8B:FF:D3:A1:01:FF:2A:AE:55:19:E5:B0:74:63:16:2E:25:75:FC:C0:2C"]
+      }
+    }]
