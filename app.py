@@ -1,66 +1,48 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import os
+import requests
 
-app = FastAPI(
-    title="Mustafa Soft API",
-    description="API for mustafa-soft.com - GSM Tools Store",
-    version="1.0.0"
-)
+app = FastAPI()
 
-# Allow all origins for your store
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+GALLE_TOKEN = os.getenv("GALLE_API_TOKEN") or os.getenv("GALLE_API_TOKEN") or os.getenv("GALLE_API_TOK") 
+# بنحاول نقرا اي واحد من المتغيرات الكتبتها
+# الأفضل تستخدم GALLE_API_TOKEN
+GALLE_URL = "https://api.galleunlockers.com"
 
-# ===== MAIN ROUTE - ده المهم لـ Galle =====
+# نحاول نقرا التوكن الصح من الصورة
+for key in ["GALLE_API_TOKEN", "GALLE_API_TOK", "GALLE_API_TOK..."]:
+    if os.getenv(key):
+        GALLE_TOKEN = os.getenv(key)
+
+# لو ما لقيناهو بالحلقة الفوق، استخدم المتغير الموجود
+if not GALLE_TOKEN:
+    GALLE_TOKEN = os.getenv("GALLE_API_TOK") or os.getenv("GALLE_API_TOKEN")
+
 @app.get("/")
 def home():
+    headers = {"Authorization": f"Bearer {GALLE_TOKEN}"}
+    try:
+        r = requests.get(f"{GALLE_URL}/api/user/me", headers=headers, timeout=10)
+        galle_ok = r.status_code == 200
+        balance = r.json() if galle_ok else {}
+    except:
+        galle_ok = False
+        balance = {}
+
     return {
         "status": "Running",
-        "message": "Server is running successfully!",
         "store": "mustafa-soft.com",
-        "new_store": "gsm.mustafa-soft.com",
-        "galle_connected": True,
+        "galle_connected": galle_ok,
         "tools_live": 15,
         "email_galle": "mustafaopen88@gmail.com",
-        "api_version": "1.0"
+        "balance_info": balance
     }
 
-@app.get("/status")
-def status():
-    return {
-        "status": "Running",
-        "galle_connected": True,
-        "galle_email": "mustafaopen88@gmail.com",
-        "services": 15
-    }
-
-# ===== Health Check for Render =====
-@app.get("/health")
-def health():
-    return {"ok": True}
-
-# ===== Example Tools Endpoint =====
-@app.get("/tools")
-def get_tools():
-    return {
-        "count": 15,
-        "tools": [
-            "UnlockTool", "Chimera", "Octoplus", "EFT", "MRT", 
-            "And more..."
-        ]
-    }
-
-# For Galle - Placeholder for future integration
-@app.get("/galle/status")
-def galle_status():
-    return {
-        "galle_connected": True,
-        "account": "mustafaopen88@gmail.com",
-        "api_ready": True,
-        "need_api_key": True
-    }
+@app.get("/services")
+def services():
+    headers = {"Authorization": f"Bearer {GALLE_TOKEN}"}
+    try:
+        r = requests.get(f"{GALLE_URL}/api/services", headers=headers, timeout=15)
+        return r.json()
+    except Exception as e:
+        return {"error": str(e)}
