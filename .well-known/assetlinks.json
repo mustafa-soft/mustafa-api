@@ -2,7 +2,7 @@
       "relation": ["delegate_permission/common.handle_all_urls"],
       "target": {
         "namespace": "android_app",
-        "package_name": "com.mustafasoft.store",
-        "sha256_cert_fingerprints": ["6C:F0:6E:3D:18:34:B4:3F:94:0B:D7:8B:FF:D3:A1:01:FF:2A:AE:55:19:E5:B0:74:63:16:2E:25:75:FC:C0:2C"]
+        "package_name": "com.mustafa.soft",
+        "sha256_cert_fingerprints": ["06:5F:E1:D2:4F:CD:08:63:7B:F7:65:70:7A:2B:B9:36:3B:D3:7F:A8:A0:20:1F:C4:F7:EA:CA:E4:94:1A:59:BD"]
       }
     }]
