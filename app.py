@@ -1,83 +1,75 @@
-from fastapi import FastAPI, Header, Request
-import os, requests, base64, json
+from fastapi import FastAPI
+import os
 
 app = FastAPI()
 
-# التوكن حقك من الصورة - بيقراهو من Render
-BEARER = os.getenv("GALLE_API_TOK") or os.getenv("GALLE_TOKEN") or os.getenv("GALLE_API_TOKEN")
-BASE_URL = "https://api.galleunlockers.com" # أو رابط Dhru Fusion بتاعك
-
-# نخزنو مؤقت - في الإنتاج استخدم DB
-ORDERS_DB = {}
+def get_token():
+    for k in ["GALLE_API_TOK", "GALLE_TOKEN", "GALLE_API_TOKEN", "GALLE_API_TOK...", "GALLE_API_TOK.."]:
+        v = os.getenv(k)
+        if v and len(v) > 20:
+            return v
+    return None
 
 @app.get("/")
 def home():
+    token = get_token()
+    has_token = bool(token)
+    token_preview = (token[:15] + "..." + token[-10:]) if token and len(token) > 30 else "not found"
+    
     return {
         "status": "Running",
         "store": "mustafa-soft.com",
-        "galle_connected": bool(BEARER),
+        "galle_token_found": has_token,
+        "token_preview": token_preview,
+        "galle_connected": False,
         "tools_live": 15,
-        "security": "HTTPS + Bearer in server secrets only"
+        "email": "mustafaopen88@gmail.com",
+        "message": "Server is Live! Token OK" if has_token else "Add GALLE_API_TOK in Render Environment",
+        "endpoints": {
+            "docs": "/docs",
+            "products_test": "/test-galle",
+            "callback": "/callback"
+        }
     }
 
-@app.get("/products")
-def get_products():
-    # الـ products بترجع keys هي الـ product_id الرقمية
-    # data.products.123.name ...
-    headers = {"Authorization": f"Bearer {BEARER}"}
-    r = requests.get(f"{BASE_URL}/api/products", headers=headers, timeout=20)
-    return r.json()
-
-@app.post("/order")
-def place_order(product_id: str, quantity: int = 1, reference_id: str = "", order_fields_json: dict = {}, confirm_paid_order: str = "NO"):
-    """
-    الحماية: ما بننفذ طلب مدفوع الا لو confirm_paid_order == YES
-    """
-    if confirm_paid_order != "YES":
-        return {"status": "error", "code": 400, "message": "Set confirm_paid_order=YES to place real paid order"}
-
-    headers = {"Authorization": f"Bearer {BEARER}", "Content-Type": "application/json"}
-    payload = {
-        "product_id": product_id, # المفتاح الرقمي من data.products
-        "quantity": quantity,
-        "reference_id": reference_id, # لازم Unique لكل طلب
-        "order_fields_json": order_fields_json or {}, # {} لو مافي حقول اضافية
-        "feedback_url": "https://mustafa-api-1.onrender.com/callback"
-    }
-    r = requests.post(f"{BASE_URL}/api/order", headers=headers, json=payload, timeout=30)
+@app.get("/test-galle")
+def test_galle():
+    import requests
+    token = get_token()
+    if not token:
+        return {"error": "No token found in env"}
     
-    # نطبق قاعدة Error handling: نفحص HTTP و JSON status
-    try:
-        data = r.json()
-        if data.get("status") != "success":
-             return {"status": "error", "http_code": r.status_code, "details": data}
-        return data
-    except:
-        return {"status": "error", "http": r.status_code, "text": r.text}
+    base_urls = [
+        "https://api.galleunlockers.com",
+        "https://galleunlockers.com/api",
+        "https://api.galleunlockers.com/api"
+    ]
+    endpoints = ["/user/me", "/me", "/profile", "/balance", "/user", "/services", "/products"]
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    results = []
+    
+    for base in base_urls:
+        for ep in endpoints:
+            url = base + ep
+            try:
+                r = requests.get(url, headers=headers, timeout=10)
+                results.append({"url": url, "status": r.status_code, "ok": r.status_code < 400, "body": r.text[:300]})
+                if r.status_code == 200:
+                    try:
+                        return {"success_url": url, "response": r.json(), "all_tries": results}
+                    except:
+                        return {"success_url": url, "response": r.text[:500], "all_tries": results}
+            except Exception as e:
+                results.append({"url": url, "error": str(e)})
+    
+    return {"message": "Tried all endpoints, check list", "tries": results}
 
 @app.post("/callback")
-async def receive_feedback(request: Request):
-    body = await request.json()
-    # {"reference_id": "...", "order_id": "D...", "status": "success", "replay": "base64..."}
-    ref = body.get("reference_id")
-    order_uuid = body.get("order_id")
-    
-    # فك الـ replay كنص غير موثوق
-    replay_text = ""
+async def callback(request):
     try:
-        replay_text = base64.b64decode(body.get("replay","")).decode(errors="ignore")
+        from fastapi import Request
+        body = await request.json()
     except:
-        pass
-
-    ORDERS_DB[ref or order_uuid] = body
-
-    # المهم: لازم ترجع 200 سريع وتتأكد براك بـ GET /order قبل التسليم
-    # هنا بنعمل التحقق
-    # GET /order?order_uuid=D...
-    return {"status": "received"}
-
-@app.get("/order/{order_uuid}")
-def get_order(order_uuid: str):
-    headers = {"Authorization": f"Bearer {BEARER}"}
-    r = requests.get(f"{BASE_URL}/api/order/{order_uuid}", headers=headers, timeout=20)
-    return r.json()
+        body = {}
+    return {"received": True, "reference_id": body.get("reference_id"), "order_id": body.get("order_id")}
