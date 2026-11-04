@@ -1,75 +1,60 @@
 from fastapi import FastAPI
 import os
+import requests
 
 app = FastAPI()
 
-def get_token():
-    for k in ["GALLE_API_TOK", "GALLE_TOKEN", "GALLE_API_TOKEN", "GALLE_API_TOK...", "GALLE_API_TOK.."]:
-        v = os.getenv(k)
-        if v and len(v) > 20:
-            return v
-    return None
+# قراءة التوكن من اي متغير انت كاتبو
+GALLE_TOKEN = (
+    os.getenv("GALLE_API_TOKEN") or 
+    os.getenv("GALLE_API_TOK") or 
+    os.getenv("GALLE_API_TOK_") or
+    os.getenv("GALLE_API_TOKEN_") or
+    ""
+)
+GALLE_URL = os.getenv("GALLE_API_URL") or "https://api.galleunlockers.com"
+# لو كاتب الرابط مع - 
+if not GALLE_URL or "galle" not in GALLE_URL:
+    GALLE_URL = os.getenv("GALLE-API-URL") or "https://api.galleunlockers.com"
 
 @app.get("/")
 def home():
-    token = get_token()
-    has_token = bool(token)
-    token_preview = (token[:15] + "..." + token[-10:]) if token and len(token) > 30 else "not found"
-    
+    galle_ok = False
+    info = {}
+    if GALLE_TOKEN and len(GALLE_TOKEN) > 20:
+        try:
+            headers = {"Authorization": f"Bearer {GALLE_TOKEN}"}
+            r = requests.get(f"{GALLE_URL}/api/user/me", headers=headers, timeout=10)
+            if r.status_code == 200:
+                galle_ok = True
+                info = r.json()
+            else:
+                info = {"http_code": r.status_code, "response": r.text[:300]}
+        except Exception as e:
+            info = {"error": str(e)}
+    else:
+        info = {"error": "GALLE_TOKEN not found or too short"}
+
     return {
         "status": "Running",
         "store": "mustafa-soft.com",
-        "galle_token_found": has_token,
-        "token_preview": token_preview,
-        "galle_connected": False,
+        "galle_connected": galle_ok,
         "tools_live": 15,
-        "email": "mustafaopen88@gmail.com",
-        "message": "Server is Live! Token OK" if has_token else "Add GALLE_API_TOK in Render Environment",
-        "endpoints": {
-            "docs": "/docs",
-            "products_test": "/test-galle",
-            "callback": "/callback"
-        }
+        "email_galle": "mustafaopen88@gmail.com",
+        "debug": info
     }
 
-@app.get("/test-galle")
-def test_galle():
-    import requests
-    token = get_token()
-    if not token:
-        return {"error": "No token found in env"}
-    
-    base_urls = [
-        "https://api.galleunlockers.com",
-        "https://galleunlockers.com/api",
-        "https://api.galleunlockers.com/api"
-    ]
-    endpoints = ["/user/me", "/me", "/profile", "/balance", "/user", "/services", "/products"]
-    
-    headers = {"Authorization": f"Bearer {token}"}
-    results = []
-    
-    for base in base_urls:
-        for ep in endpoints:
-            url = base + ep
-            try:
-                r = requests.get(url, headers=headers, timeout=10)
-                results.append({"url": url, "status": r.status_code, "ok": r.status_code < 400, "body": r.text[:300]})
-                if r.status_code == 200:
-                    try:
-                        return {"success_url": url, "response": r.json(), "all_tries": results}
-                    except:
-                        return {"success_url": url, "response": r.text[:500], "all_tries": results}
-            except Exception as e:
-                results.append({"url": url, "error": str(e)})
-    
-    return {"message": "Tried all endpoints, check list", "tries": results}
-
-@app.post("/callback")
-async def callback(request):
+@app.get("/services")
+def services():
+    if not GALLE_TOKEN:
+        return {"error": "Token missing"}
     try:
-        from fastapi import Request
-        body = await request.json()
-    except:
-        body = {}
-    return {"received": True, "reference_id": body.get("reference_id"), "order_id": body.get("order_id")}
+        headers = {"Authorization": f"Bearer {GALLE_TOKEN}"}
+        r = requests.get(f"{GALLE_URL}/api/services", headers=headers, timeout=15)
+        return r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/docs-check")
+def docs_check():
+    return {"message": "API is live", "token_len": len(GALLE_TOKEN) if GALLE_TOKEN else 0}
