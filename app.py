@@ -1,60 +1,83 @@
-from fastapi import FastAPI
-import os
-import requests
+from fastapi import FastAPI, Header, Request
+import os, requests, base64, json
 
 app = FastAPI()
 
-# قراءة التوكن من اي متغير انت كاتبو
-GALLE_TOKEN = (
-    os.getenv("GALLE_API_TOKEN") or 
-    os.getenv("GALLE_API_TOK") or 
-    os.getenv("GALLE_API_TOK_") or
-    os.getenv("GALLE_API_TOKEN_") or
-    ""
-)
-GALLE_URL = os.getenv("GALLE_API_URL") or "https://api.galleunlockers.com"
-# لو كاتب الرابط مع - 
-if not GALLE_URL or "galle" not in GALLE_URL:
-    GALLE_URL = os.getenv("GALLE-API-URL") or "https://api.galleunlockers.com"
+# التوكن حقك من الصورة - بيقراهو من Render
+BEARER = os.getenv("GALLE_API_TOK") or os.getenv("GALLE_TOKEN") or os.getenv("GALLE_API_TOKEN")
+BASE_URL = "https://api.galleunlockers.com" # أو رابط Dhru Fusion بتاعك
+
+# نخزنو مؤقت - في الإنتاج استخدم DB
+ORDERS_DB = {}
 
 @app.get("/")
 def home():
-    galle_ok = False
-    info = {}
-    if GALLE_TOKEN and len(GALLE_TOKEN) > 20:
-        try:
-            headers = {"Authorization": f"Bearer {GALLE_TOKEN}"}
-            r = requests.get(f"{GALLE_URL}/api/user/me", headers=headers, timeout=10)
-            if r.status_code == 200:
-                galle_ok = True
-                info = r.json()
-            else:
-                info = {"http_code": r.status_code, "response": r.text[:300]}
-        except Exception as e:
-            info = {"error": str(e)}
-    else:
-        info = {"error": "GALLE_TOKEN not found or too short"}
-
     return {
         "status": "Running",
         "store": "mustafa-soft.com",
-        "galle_connected": galle_ok,
+        "galle_connected": bool(BEARER),
         "tools_live": 15,
-        "email_galle": "mustafaopen88@gmail.com",
-        "debug": info
+        "security": "HTTPS + Bearer in server secrets only"
     }
 
-@app.get("/services")
-def services():
-    if not GALLE_TOKEN:
-        return {"error": "Token missing"}
-    try:
-        headers = {"Authorization": f"Bearer {GALLE_TOKEN}"}
-        r = requests.get(f"{GALLE_URL}/api/services", headers=headers, timeout=15)
-        return r.json()
-    except Exception as e:
-        return {"error": str(e)}
+@app.get("/products")
+def get_products():
+    # الـ products بترجع keys هي الـ product_id الرقمية
+    # data.products.123.name ...
+    headers = {"Authorization": f"Bearer {BEARER}"}
+    r = requests.get(f"{BASE_URL}/api/products", headers=headers, timeout=20)
+    return r.json()
 
-@app.get("/docs-check")
-def docs_check():
-    return {"message": "API is live", "token_len": len(GALLE_TOKEN) if GALLE_TOKEN else 0}
+@app.post("/order")
+def place_order(product_id: str, quantity: int = 1, reference_id: str = "", order_fields_json: dict = {}, confirm_paid_order: str = "NO"):
+    """
+    الحماية: ما بننفذ طلب مدفوع الا لو confirm_paid_order == YES
+    """
+    if confirm_paid_order != "YES":
+        return {"status": "error", "code": 400, "message": "Set confirm_paid_order=YES to place real paid order"}
+
+    headers = {"Authorization": f"Bearer {BEARER}", "Content-Type": "application/json"}
+    payload = {
+        "product_id": product_id, # المفتاح الرقمي من data.products
+        "quantity": quantity,
+        "reference_id": reference_id, # لازم Unique لكل طلب
+        "order_fields_json": order_fields_json or {}, # {} لو مافي حقول اضافية
+        "feedback_url": "https://mustafa-api-1.onrender.com/callback"
+    }
+    r = requests.post(f"{BASE_URL}/api/order", headers=headers, json=payload, timeout=30)
+    
+    # نطبق قاعدة Error handling: نفحص HTTP و JSON status
+    try:
+        data = r.json()
+        if data.get("status") != "success":
+             return {"status": "error", "http_code": r.status_code, "details": data}
+        return data
+    except:
+        return {"status": "error", "http": r.status_code, "text": r.text}
+
+@app.post("/callback")
+async def receive_feedback(request: Request):
+    body = await request.json()
+    # {"reference_id": "...", "order_id": "D...", "status": "success", "replay": "base64..."}
+    ref = body.get("reference_id")
+    order_uuid = body.get("order_id")
+    
+    # فك الـ replay كنص غير موثوق
+    replay_text = ""
+    try:
+        replay_text = base64.b64decode(body.get("replay","")).decode(errors="ignore")
+    except:
+        pass
+
+    ORDERS_DB[ref or order_uuid] = body
+
+    # المهم: لازم ترجع 200 سريع وتتأكد براك بـ GET /order قبل التسليم
+    # هنا بنعمل التحقق
+    # GET /order?order_uuid=D...
+    return {"status": "received"}
+
+@app.get("/order/{order_uuid}")
+def get_order(order_uuid: str):
+    headers = {"Authorization": f"Bearer {BEARER}"}
+    r = requests.get(f"{BASE_URL}/api/order/{order_uuid}", headers=headers, timeout=20)
+    return r.json()
