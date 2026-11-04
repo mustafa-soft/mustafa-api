@@ -1,78 +1,88 @@
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query
 import os, requests
 
 app = FastAPI()
 
-# التوكن من Render
-TOKEN = os.getenv("GALLE_API_TOK") or os.getenv("GALLE_API_TOKEN") or os.getenv("GALLE_TOKEN")
-BASE = "https://api.galleunlockers.com"
+# من صورتك
+USERNAME = "mustafaopen88@gmail.com"
+API_KEY = os.getenv("GALLE_API_TOK") or os.getenv("GALLE_API_TOKEN") or os.getenv("GALLE_TOKEN") or ""
+# الرابط الصح من صورتك الأخيرة
+LEGACY_BASE = "https://galleunlock.legacy-api.io"
 
-def get_headers():
-    return {
-        "Authorization": f"Bearer {TOKEN}",
-        "User-Agent": "Mozilla/5.0 MustafaSoft",
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
+# الرابط الجديد Bearer (لو عايز تجربو)
+NEW_BASE = "https://api.galleunlockers.com"
 
 @app.get("/")
 def home():
     return {
-        "status": "Running",
+        "status": "Running ✅",
         "store": "mustafa-soft.com",
-        "galle_token_found": bool(TOKEN),
-        "base": BASE,
-        "endpoints": ["/account", "/products", "/order", "/callback"],
-        "note": "Use /account to test connection"
+        "legacy_endpoint": LEGACY_BASE,
+        "username": USERNAME,
+        "key_found": bool(API_KEY),
+        "key_len": len(API_KEY),
+        "message": "Legacy API is ready!",
+        "endpoints": ["/account", "/products", "/order?imei=xxx&service_id=yyy"]
     }
+
+def legacy_call(action, extra_params=None):
+    if not API_KEY:
+        return {"error": "API Key missing in Render Env GALLE_API_TOK"}
+    params = {
+        "username": USERNAME,
+        "key": API_KEY,
+        "action": action
+    }
+    if extra_params:
+        params.update(extra_params)
+    try:
+        # معظم Legacy APIs بتقبل GET
+        r = requests.get(LEGACY_BASE, params=params, timeout=30)
+        # حاول تفسر كـ JSON
+        try:
+            j = r.json()
+            return {"http": r.status_code, "url": r.url, "data": j}
+        except:
+            return {"http": r.status_code, "url": r.url, "text": r.text[:5000]}
+    except Exception as e:
+        return {"error": str(e), "url": LEGACY_BASE}
 
 @app.get("/account")
 def account():
-    try:
-        r = requests.get(f"{BASE}/account", headers=get_headers(), timeout=20)
-        return {"http": r.status_code, "data": r.json() if r.headers.get("content-type","").startswith("application/json") else r.text[:500]}
-    except Exception as e:
-        return {"error": str(e), "token_found": bool(TOKEN)}
+    # action=accountinfo هو الصح في Legacy
+    return legacy_call("accountinfo")
 
 @app.get("/products")
-def products():
-    try:
-        r = requests.get(f"{BASE}/products", headers=get_headers(), timeout=20)
-        try:
-            data = r.json()
-            return data
-        except:
-            return {"http": r.status_code, "text": r.text[:2000]}
-    except Exception as e:
-        return {"error": str(e)}
+@app.get("/services")
+def services():
+    # imeiservicelist = خدمات IMEI + Server
+    # حسب README Dhru
+    result = legacy_call("imeiservicelist")
+    return result
 
-@app.get("/products/{product_id}")
-def product_detail(product_id: str):
-    try:
-        r = requests.get(f"{BASE}/products?product_id={product_id}", headers=get_headers(), timeout=20)
-        return r.json() if "application/json" in r.headers.get("content-type","") else {"http": r.status_code, "text": r.text[:2000]}
-    except Exception as e:
-        return {"error": str(e)}
+@app.get("/server-services")
+def server_services():
+    return legacy_call("serverservicelist")
 
-@app.post("/callback")
-async def callback(request: Request):
-    body = await request.json()
-    # هنا بتستقبل اشعارات Galle لما الطلب يخلص
-    print("CALLBACK:", body)
-    return {"status": "received"}
+@app.get("/order")
+def place_order(imei: str = Query(None), service_id: str = Query(None), serviceid: str = Query(None)):
+    sid = service_id or serviceid
+    if not imei or not sid:
+        return {"error": "Use /order?imei=3534...&service_id=123"}
+    return legacy_call("placeimeiorder", {"serviceid": sid, "imei": imei})
 
-@app.get("/test-galle")
-def test_galle():
+@app.get("/get-order")
+def get_order(orderid: str = Query(None)):
+    if not orderid:
+        return {"error": "Use /get-order?orderid=12345"}
+    return legacy_call("getimeiorder", {"orderid": orderid})
+
+@app.get("/debug")
+def debug():
+    # بجرب كم action عشان نعرف الشغال
+    actions = ["accountinfo", "imeiservicelist", "getservices", "services"]
     results = {}
-    for path in ["/account", "/products"]:
-        try:
-            r = requests.get(f"{BASE}{path}", headers=get_headers(), timeout=15)
-            try:
-                j = r.json()
-                results[path] = {"status": r.status_code, "ok": r.status_code==200, "sample": str(j)[:1000]}
-            except:
-                results[path] = {"status": r.status_code, "text": r.text[:800]}
-        except Exception as e:
-            results[path] = {"error": str(e)}
+    for act in actions:
+        results[act] = legacy_call(act)
     return results
