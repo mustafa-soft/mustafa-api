@@ -134,6 +134,8 @@ def _json_env(name, default):
 MARKUP_TIERS = _json_env("MARKUP_TIERS", [[2, 35], [10, 20], [30, 12], [1e12, 8]])
 # استثناء لأقسام معينة (رقم القسم: نسبة). مثال: {"C1946": 15}
 MARKUP_CATEGORIES = _json_env("MARKUP_CATEGORIES", {})
+# نص مدة مخصص لخدمات معينة (رقم الخدمة: نص). مثال: {"8960": "عادةً 1-24 ساعة"}
+TIME_OVERRIDES = _json_env("TIME_OVERRIDES", {})
 
 
 def sale_price(cost, cid=None):
@@ -177,7 +179,7 @@ def build_catalog():
                 "category": (categories.get(cid) or {}).get("name"),
                 "price": price,
                 "currency": currency,
-                "time": p.get("time"),
+                "time": TIME_OVERRIDES.get(str(pid)) or p.get("time"),
                 "fields": fields,
             }
         )
