@@ -152,7 +152,7 @@ function card(i){
   const inputs=(i.fields||[]).filter(f=>f!==qf);
   const qmin=qf?Math.max(1,parseInt(qf.min)||1):1, qmax=qf?(parseInt(qf.max)||100000):1;
   el.innerHTML=`<h4>${esc(i.name)}</h4><div class="cat">${esc(i.category||'')}</div>
-  <div class="row"><span class="price">$${Number(i.price).toFixed(2)}</span><span class="time">للوحدة | <bdi dir="ltr">${esc(i.time||'')}</bdi></span></div>`;
+  <div class="row"><span class="price">$${Number(i.price).toFixed(2)}</span><span class="time">للوحدة | <bdi>${esc(i.time||'')}</bdi></span></div>`;
   const vals={};
   inputs.forEach((f,k)=>{
     const id=`f${i.id}_${k}`,lab=document.createElement('label');lab.htmlFor=id;lab.textContent=f.name+(f.required?' *':'');
