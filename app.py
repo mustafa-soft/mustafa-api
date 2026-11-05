@@ -471,7 +471,7 @@ const ST={pending:'بانتظار تأكيد الدفع',sending:'جاري ال�
 async function api(p,m){const r=await fetch(p,{method:m||'GET',headers:{'X-Admin-Key':K}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.detail==='string'?d.detail:r.status);return d}
 function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 async function load(){
-  try{const a=await api('/account');const d=a.data||{};$('bal').textContent=(d.balance||'?')+' '+(d.currency||'');$('who').textContent=d.name||''}catch(e){$('bal').textContent='تعذر قراءة الرصيد: '+e.message}
+  try{const a=await api('/account');const d=a.data||{};$('bal').textContent=(d.balance??'?')+' '+(d.currency||'');$('who').textContent=d.name||''}catch(e){$('bal').textContent='تعذر قراءة الرصيد: '+e.message}
   const os=await api('/admin/orders');const L=$('list');L.innerHTML='';
   if(!os.length)L.append(el('p','m','لا توجد طلبات بعد.'));
   os.forEach(o=>{
