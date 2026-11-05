@@ -1,9 +1,7 @@
 import os
-import json
 import time
 import uuid
 import hmac
-import html
 import logging
 
 import requests
@@ -12,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("mustafa-api")
 
 app = FastAPI(title="Mustafa Soft API")
@@ -19,7 +18,7 @@ app = FastAPI(title="Mustafa Soft API")
 # ---------------------------------------------------------------
 # الإعدادات (كلها من Environment Variables في Render)
 # ---------------------------------------------------------------
-BASE_URL = (os.getenv("GALLE_API_URL") or "https://api.galleunlockers.com").rstrip("/")
+BASE_URL = (os.getenv("GALLE_API_URL") or "").rstrip("/")
 API_TOKEN = (
     os.getenv("GALLE_API_TOK")
     or os.getenv("GALLE_API_TOKEN")
@@ -28,8 +27,19 @@ API_TOKEN = (
 ).strip()
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
 ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "https://mustafa-soft.com")
-# عنوان استقبال نتيجة الأوردر (لازم HTTPS). Render بيوفّر RENDER_EXTERNAL_URL تلقائيًا
 PUBLIC_URL = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
+
+
+def _env_float(name, default):
+    try:
+        return float(os.getenv(name, default))
+    except ValueError:
+        return float(default)
+
+
+# هامش الربح: سعر البيع = سعر الجملة × (1 + النسبة/100) + مبلغ ثابت
+MARKUP_PERCENT = _env_float("MARKUP_PERCENT", "20")
+MARKUP_FIXED = _env_float("MARKUP_FIXED", "0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,7 +61,7 @@ def require_admin(x_admin_key: str = Header("")):
 # الاتصال بالمزوّد (Dhru Fusion Pro Reseller API)
 # ---------------------------------------------------------------
 def call_api(method, path, params=None, body=None, timeout=30):
-    if not API_TOKEN:
+    if not API_TOKEN or not BASE_URL:
         raise HTTPException(status_code=503, detail="Server is not configured")
 
     headers = {
@@ -73,7 +83,11 @@ def call_api(method, path, params=None, body=None, timeout=30):
     try:
         data = r.json()
     except ValueError:
-        raise HTTPException(status_code=502, detail="Invalid response from provider")
+        log.warning("non-json from provider: %s", r.status_code)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Provider returned HTTP {r.status_code} (not JSON)",
+        )
 
     # بعض أخطاء الأوردر ترجع 2xx مع status=error، فلازم نفحص الاتنين
     if r.status_code >= 400 or (isinstance(data, dict) and data.get("status") == "error"):
@@ -103,6 +117,50 @@ def cached_products(product_id=None):
 
 
 # ---------------------------------------------------------------
+# الكتالوج العام (بأسعار البيع فقط، بدون سعر الجملة)
+# ---------------------------------------------------------------
+def sale_price(cost):
+    try:
+        c = float(cost)
+    except (TypeError, ValueError):
+        return None
+    return round(c * (1 + MARKUP_PERCENT / 100.0) + MARKUP_FIXED, 2)
+
+
+def build_catalog():
+    raw = cached_products()
+    data = raw.get("data") if isinstance(raw, dict) else None
+    data = data or {}
+    categories = data.get("categories") or {}
+    currency = data.get("currency")
+    items = []
+    for pid, p in (data.get("products") or {}).items():
+        price = sale_price(p.get("price"))
+        if price is None:
+            continue
+        cid = p.get("cid")
+        fields = [
+            {k: f[k] for k in ("type", "name", "required", "min", "max") if k in f}
+            for f in (p.get("fields") or [])
+            if isinstance(f, dict)
+        ]
+        items.append(
+            {
+                "id": pid,
+                "name": p.get("name"),
+                "type": p.get("type"),
+                "category_id": cid,
+                "category": (categories.get(cid) or {}).get("name"),
+                "price": price,
+                "currency": currency,
+                "time": p.get("time"),
+                "fields": fields,
+            }
+        )
+    return currency, items
+
+
+# ---------------------------------------------------------------
 # الصفحات والـ Endpoints
 # ---------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
@@ -113,7 +171,7 @@ def home():
     <p style="color:#22c55e;">السيرفر شغال</p>
     <div style="background:#1e293b; padding:20px; border-radius:12px; margin:20px;">
         <p><a href="/health" style="color:#38bdf8;">/health - حالة الإعدادات</a></p>
-        <p><a href="/products-view" style="color:#facc15;">/products-view - عرض الخدمات</a></p>
+        <p><a href="/catalog?limit=20" style="color:#facc15;">/catalog - كتالوج الخدمات</a></p>
     </div>
     </html>
     """
@@ -129,26 +187,42 @@ def health():
     }
 
 
+@app.get("/catalog")
+def catalog(
+    q: str | None = Query(None, max_length=60),
+    category_id: str | None = Query(None, pattern=r"^[0-9A-Za-z_-]{1,40}$"),
+    type: str | None = Query(None, pattern=r"^[a-z]{1,20}$"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    currency, items = build_catalog()
+    if q:
+        needle = q.lower()
+        items = [i for i in items if needle in (i["name"] or "").lower()]
+    if category_id:
+        items = [i for i in items if i["category_id"] == category_id]
+    if type:
+        items = [i for i in items if i["type"] == type]
+    total = len(items)
+    return {
+        "currency": currency,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "items": items[offset : offset + limit],
+    }
+
+
+# ---- مسارات الإدارة (محمية) ----
 @app.get("/account", dependencies=[Depends(require_admin)])
 def account():
     return call_api("GET", "/account")
 
 
-@app.get("/products")
+@app.get("/products", dependencies=[Depends(require_admin)])
 def products(product_id: str | None = Query(None, pattern=r"^[0-9A-Za-z-]{1,64}$")):
+    # يعرض بيانات المزوّد الخام بأسعار الجملة: للإدارة فقط
     return cached_products(product_id)
-
-
-@app.get("/products-view", response_class=HTMLResponse)
-def products_view():
-    text = json.dumps(cached_products(), ensure_ascii=False, indent=2)[:8000]
-    safe = html.escape(text)  # يمنع ثغرة XSS
-    return f"""
-    <html dir="rtl" style="font-family: sans-serif; background:#0f172a; color:white; padding:20px;">
-    <h1 style="text-align:center;">خدمات Mustafa Soft</h1>
-    <pre style="background:#1e293b; padding:20px; overflow:auto; text-align:left; direction:ltr;">{safe}</pre>
-    </html>
-    """
 
 
 class OrderIn(BaseModel):
