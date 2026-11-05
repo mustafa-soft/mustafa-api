@@ -122,12 +122,33 @@ def cached_products(product_id=None):
 # ---------------------------------------------------------------
 # الكتالوج العام (بأسعار البيع فقط، بدون سعر الجملة)
 # ---------------------------------------------------------------
-def sale_price(cost):
+def _json_env(name, default):
+    try:
+        return json.loads(os.getenv(name) or "") or default
+    except ValueError:
+        return default
+
+
+# شرائح الهامش حسب تكلفة الوحدة: [[الحد الأعلى للتكلفة، نسبة الربح %]]
+# يمكن تغييرها من Render عبر MARKUP_TIERS، مثال: [[2,35],[10,20],[30,12],[1000000,8]]
+MARKUP_TIERS = _json_env("MARKUP_TIERS", [[2, 35], [10, 20], [30, 12], [1e12, 8]])
+# استثناء لأقسام معينة (رقم القسم: نسبة). مثال: {"C1946": 15}
+MARKUP_CATEGORIES = _json_env("MARKUP_CATEGORIES", {})
+
+
+def sale_price(cost, cid=None):
     try:
         c = float(cost)
     except (TypeError, ValueError):
         return None
-    return round(c * (1 + MARKUP_PERCENT / 100.0) + MARKUP_FIXED, 2)
+    pct = MARKUP_CATEGORIES.get(str(cid))
+    if pct is None:
+        pct = MARKUP_TIERS[-1][1]
+        for limit, p in MARKUP_TIERS:
+            if c < float(limit):
+                pct = p
+                break
+    return round(c * (1 + float(pct) / 100.0) + MARKUP_FIXED, 2)
 
 
 def build_catalog():
@@ -138,7 +159,7 @@ def build_catalog():
     currency = data.get("currency")
     items = []
     for pid, p in (data.get("products") or {}).items():
-        price = sale_price(p.get("price"))
+        price = sale_price(p.get("price"), p.get("cid"))
         if price is None:
             continue
         cid = p.get("cid")
@@ -339,7 +360,7 @@ def create_request(item: RequestIn, request: Request):
     p = get_product(item.product_id)
     clean, has_qty = check_fields(p, item.values, item.quantity)
     cost = float(p.get("price") or 0)
-    unit = sale_price(cost)
+    unit = sale_price(cost, p.get("cid"))
     if unit is None:
         raise HTTPException(status_code=503, detail="Price unavailable")
     ref = "ms-" + uuid.uuid4().hex[:20]
