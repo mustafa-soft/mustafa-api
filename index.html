@@ -20,6 +20,7 @@ header .wrap{display:flex;align-items:center;justify-content:space-between;heigh
 .pill{font-size:11px;font-weight:600;padding:2px 10px;border-radius:99px;background:#F1F5F9;color:var(--mute)}
 .pill.on{background:var(--okbg);color:var(--ok)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:42px;padding:0 18px;border:0;border-radius:11px;background:var(--ink);color:#fff;font:inherit;font-weight:600;font-size:14px;cursor:pointer;text-decoration:none}
+[hidden]{display:none!important}
 .btn:disabled{opacity:.55;cursor:default}
 .btn.light{background:#F1F5F9;color:var(--ink)}
 h1{font-size:26px;margin:28px 0 4px;letter-spacing:-.01em}
@@ -151,7 +152,7 @@ function card(i){
   const inputs=(i.fields||[]).filter(f=>f!==qf);
   const qmin=qf?Math.max(1,parseInt(qf.min)||1):1, qmax=qf?(parseInt(qf.max)||100000):1;
   el.innerHTML=`<h4>${esc(i.name)}</h4><div class="cat">${esc(i.category||'')}</div>
-  <div class="row"><span class="price">$${Number(i.price).toFixed(2)}</span><span class="time">${esc(i.time||'')}</span></div>`;
+  <div class="row"><span class="price">$${Number(i.price).toFixed(2)}</span><span class="time">للوحدة | ${esc(i.time||'')}</span></div>`;
   const vals={};
   inputs.forEach((f,k)=>{
     const id=`f${i.id}_${k}`,lab=document.createElement('label');lab.htmlFor=id;lab.textContent=f.name+(f.required?' *':'');
@@ -168,11 +169,11 @@ function card(i){
   }
   const tot=document.createElement('div');tot.className='total';
   const err=document.createElement('div');err.className='err';err.setAttribute('role','alert');
-  const b=document.createElement('button');b.className='btn';b.textContent='اطلب عبر واتساب';
+  const b=document.createElement('button');b.className='btn';b.textContent='إرسال الطلب';
   function qty(){return qin?parseInt(qin.value)||0:1}
   function upd(){tot.textContent='الإجمالي: $'+(qty()*i.price).toFixed(2)}
   upd();
-  b.onclick=()=>{
+  b.onclick=async()=>{
     const n=qty();
     if(qin&&(n<qmin||n>qmax)){err.textContent=`الكمية يجب أن تكون بين ${qmin} و ${qmax}`;return}
     for(let k=0;k<inputs.length;k++){
@@ -180,9 +181,20 @@ function card(i){
       if(f.required&&!v){err.textContent=`أدخل ${f.name}`;return}
       if((f.type==='imei'||/^imei$/i.test(f.name))&&v&&!/^\d{15}$/.test(v)){err.textContent='رقم IMEI يجب أن يكون 15 رقمًا';return}
     }
+    const values={};inputs.forEach((f,k)=>{if(vals[k])values[f.name]=vals[k]});
+    b.disabled=true;b.textContent='جاري الإرسال…';
+    let ref='';
+    try{
+      const r=await fetch(API+'/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_id:String(i.id),values,quantity:n})});
+      const d=await r.json();
+      if(!r.ok)throw new Error();
+      ref=d.ref;
+    }catch(x){err.textContent='تعذر إرسال الطلب. حاول مرة أخرى أو تواصل عبر واتساب.';b.disabled=false;b.textContent='إرسال الطلب';return}
     const lines=inputs.map((f,k)=>`${f.name}: ${vals[k]||'-'}`);
-    const msg=`السلام عليكم\nأريد طلب الخدمة:\n${i.name}\nرقم الخدمة: ${i.id}\nالكمية: ${n}\nالسعر: $${(n*i.price).toFixed(2)}\n${lines.join('\n')}\n\nتم الدفع عبر (بنكك / USDT). مرفق الإشعار.`;
-    window.open(`https://wa.me/${WA}?text=${encodeURIComponent(msg)}`,'_blank','noopener');
+    const msg=`السلام عليكم\nرقم الطلب: ${ref}\nالخدمة: ${i.name}\nالكمية: ${n}\nالإجمالي: $${(n*i.price).toFixed(2)}\n${lines.join('\n')}\n\nتم الدفع عبر (بنكك / USDT). مرفق الإشعار.`;
+    const a=document.createElement('a');a.className='btn';a.target='_blank';a.rel='noopener';
+    a.href=`https://wa.me/${WA}?text=`+encodeURIComponent(msg);a.textContent='أكمل الدفع وأرسل الإشعار عبر واتساب';
+    b.replaceWith(a);err.style.color='#166534';err.textContent='تم تسجيل طلبك برقم '+ref+'. ادفع ثم أرسل الإشعار.';
   };
   el.append(tot,err,b);return el;
 }
