@@ -136,6 +136,19 @@ MARKUP_TIERS = _json_env("MARKUP_TIERS", [[2, 35], [10, 20], [30, 12], [1e12, 8]
 MARKUP_CATEGORIES = _json_env("MARKUP_CATEGORIES", {})
 # نص مدة مخصص لخدمات معينة (رقم الخدمة: نص). مثال: {"8960": "عادةً 1-24 ساعة"}
 TIME_OVERRIDES = _json_env("TIME_OVERRIDES", {})
+# قواعد مدة حسب الاسم (كل الكلمات يجب أن توجد في اسم الخدمة): [[كلمات], نص]
+TIME_RULES = _json_env(
+    "TIME_RULES",
+    [[["honor frp", "offline) fast"], "1-7 ساعات (قد تتأخر بعض الحالات)"]],
+)
+
+
+def rule_time(name):
+    n = (name or "").lower()
+    for kws, text in TIME_RULES:
+        if all(k.lower() in n for k in kws):
+            return text
+    return None
 
 
 def sale_price(cost, cid=None):
@@ -179,7 +192,7 @@ def build_catalog():
                 "category": (categories.get(cid) or {}).get("name"),
                 "price": price,
                 "currency": currency,
-                "time": TIME_OVERRIDES.get(str(pid)) or p.get("time"),
+                "time": TIME_OVERRIDES.get(str(pid)) or rule_time(p.get("name")) or p.get("time"),
                 "fields": fields,
             }
         )
