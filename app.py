@@ -223,6 +223,7 @@ def health():
         "configured": bool(API_TOKEN and BASE_URL),
         "admin_protected": bool(ADMIN_SECRET),
         "callback_ready": bool(PUBLIC_URL.startswith("https://")),
+        "storage": "redis" if REDIS_READY else "file",
     }
 
 
@@ -288,17 +289,51 @@ TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT = os.getenv("TELEGRAM_CHAT_ID", "")
 _lock = threading.Lock()
 _hits = {}
-try:
-    with open(ORDERS_FILE) as _f:
-        ORDERS = json.load(_f)
-except Exception:
-    ORDERS = {}
+UP_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").rstrip("/")
+UP_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+REDIS_KEY = "ms:orders"
+REDIS_READY = False
+
+
+def _redis(cmd):
+    r = requests.post(UP_URL, json=cmd, headers={"Authorization": f"Bearer {UP_TOKEN}"}, timeout=8)
+    r.raise_for_status()
+    return r.json().get("result")
+
+
+def _load_orders():
+    global REDIS_READY
+    if UP_URL and UP_TOKEN:
+        for _ in range(3):
+            try:
+                raw = _redis(["GET", REDIS_KEY])
+                REDIS_READY = True
+                return json.loads(raw) if raw else {}
+            except Exception:
+                time.sleep(1)
+        # لا نكتب على Redis إذا فشلت القراءة، حتى لا نمسح بيانات موجودة
+        log.warning("redis unavailable: using file storage only")
+    try:
+        with open(ORDERS_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+ORDERS = _load_orders()
 
 
 def save_orders():
+    newest = sorted(ORDERS.items(), key=lambda kv: kv[1]["created"], reverse=True)[:1000]
+    blob = json.dumps(dict(newest), ensure_ascii=False)
+    if REDIS_READY:
+        try:
+            _redis(["SET", REDIS_KEY, blob])
+        except Exception:
+            log.warning("redis save failed")
     try:
         with open(ORDERS_FILE, "w") as f:
-            json.dump(ORDERS, f, ensure_ascii=False)
+            f.write(blob)
     except OSError:
         log.warning("could not save orders file")
 
