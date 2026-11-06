@@ -1,20 +1,20 @@
 {
-  "name": "مصمم سوفت",
-  "short_name": "مصمم سوفت",
-  "description": "مصمم سوفت - متجر التطبيقات",
+  "name": "Mustafa Soft | متجر أدوات وخدمات الهواتف",
+  "short_name": "Mustafa Soft",
+  "description": "خدمات وأدوات الهواتف بأسعار منافسة",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0d47a1",
-  "theme_color": "#0d47a1",
+  "background_color": "#F8FAFC",
+  "theme_color": "#0F172A",
+  "lang": "ar",
+  "dir": "rtl",
   "icons": [
-    {"src": "72x72-.png", "sizes": "72x72", "type": "image/png"},
-    {"src": "96x96-.png", "sizes": "96x96", "type": "image/png"},
-    {"src": "128x128_.png", "sizes": "128x128", "type": "image/png"},
-    {"src": "144x144_.png", "sizes": "144x144", "type": "image/png"},
-    {"src": "152x152_.png", "sizes": "152x152", "type": "image/png"},
-    {"src": "192x192_.png", "sizes": "192x192", "type": "image/png"},
-    {"src": "384x384_.png", "sizes": "384x384", "type": "image/png"},
-    {"src": "512x512_.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+    { "src": "/144x144_.png", "sizes": "144x144", "type": "image/png", "purpose": "any" },
+    { "src": "/192x192_.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/384x384_.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
+    { "src": "/512x512_.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
   ]
 }

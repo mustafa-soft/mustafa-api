@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F172A">
 <link rel="manifest" href="/manifest.json">
-<link rel="icon" href="/icon-192.png">
+<link rel="icon" href="/192x192_.png">
+<link rel="apple-touch-icon" href="/192x192_.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Mustafa Soft | متجر أدوات وخدمات الهواتف</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
 <style>
@@ -45,6 +48,8 @@ input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid 
 .card input{direction:ltr;text-align:left}
 .err{color:var(--err);font-size:12px;min-height:0}
 .total{font-size:13px;color:var(--mute)}
+.warn{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:10px;padding:10px;font-size:12.5px}.ack{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:500}.ack input{width:auto;height:auto;margin-top:5px}
+.install{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#0F172A;color:#fff;padding:10px 16px;font-size:14px}.install span{flex:1;min-width:180px}.install .btn{height:36px;padding:0 14px}
 .state{padding:28px 16px;text-align:center;color:var(--mute);background:var(--card);border:1px dashed var(--line);border-radius:14px}
 .more{display:block;margin:20px auto}
 footer{margin-top:40px;border-top:1px solid var(--line);background:#fff;padding:24px 0 calc(24px + env(safe-area-inset-bottom))}
@@ -60,6 +65,7 @@ footer p{margin:4px 0;font-size:13px;color:var(--mute)}
   <div class="brand"><div class="logo">MS</div><span>Mustafa Soft</span><span id="status" class="pill">جاري الاتصال</span></div>
   <a class="btn" id="waTop" target="_blank" rel="noopener">واتساب</a>
 </div></header>
+<div id="install" class="install" hidden><span id="installTxt">ثبّت تطبيق Mustafa Soft على هاتفك</span><button class="btn" id="installBtn" style="background:#fff;color:#0F172A">تثبيت</button><button class="btn light" id="installX">لاحقًا</button></div>
 
 <main class="wrap">
   <h1>خدمات وأدوات الهواتف</h1>
@@ -101,7 +107,8 @@ footer p{margin:4px 0;font-size:13px;color:var(--mute)}
 
 <script>
 const API='https://mustafa-api-1.onrender.com', WA='249900287738', PAGE=24;
-const ONLY=''; // يعرض خدمات سامسونج فقط. غيّر الكلمة أو اتركها فارغة لعرض كل الخدمات
+const ONLY='';
+const RISKY_PRICE=15; // الخدمات الأغلى من هذا السعر أو اسمها فيه FRP تحتاج موافقة على شروط عدم الاسترداد // يعرض خدمات سامسونج فقط. غيّر الكلمة أو اتركها فارغة لعرض كل الخدمات
 const $=id=>document.getElementById(id);
 let ALL=[], VIEW=[], shown=0;
 $('waTop').href=$('waFoot').href='https://wa.me/'+WA;
@@ -170,11 +177,22 @@ function card(i){
   const tot=document.createElement('div');tot.className='total';
   const err=document.createElement('div');err.className='err';err.setAttribute('role','alert');
   const b=document.createElement('button');b.className='btn';b.textContent='إرسال الطلب';
+  const risky=i.price>=RISKY_PRICE||/frp/i.test(i.name||'');
+  let chk=null;
+  if(risky){
+    const w=document.createElement('div');w.className='warn';
+    w.textContent='تنبيه: الرقم الخاطئ أو غير الصالح لا يُسترد، وقد تتأخر بعض الحالات عن المدة المذكورة. تأكد من صحة البيانات قبل الإرسال.';
+    const l=document.createElement('label');l.className='ack';
+    chk=document.createElement('input');chk.type='checkbox';chk.onchange=()=>{err.textContent=''};
+    l.append(chk,document.createTextNode('قرأت التنبيه وأوافق عليه'));
+    el.append(w,l);
+  }
   function qty(){return qin?parseInt(qin.value)||0:1}
   function upd(){tot.textContent='الإجمالي: $'+(qty()*i.price).toFixed(2)}
   upd();
   b.onclick=async()=>{
     const n=qty();
+    if(risky&&!chk.checked){err.style.color='';err.textContent='يرجى الموافقة على التنبيه أولًا';return}
     if(qin&&(n<qmin||n>qmax)){err.textContent=`الكمية يجب أن تكون بين ${qmin} و ${qmax}`;return}
     for(let k=0;k<inputs.length;k++){
       const f=inputs[k],v=vals[k]||'';
@@ -191,13 +209,23 @@ function card(i){
       ref=d.ref;
     }catch(x){err.textContent='تعذر إرسال الطلب. حاول مرة أخرى أو تواصل عبر واتساب.';b.disabled=false;b.textContent='إرسال الطلب';return}
     const lines=inputs.map((f,k)=>`${f.name}: ${vals[k]||'-'}`);
-    const msg=`السلام عليكم\nرقم الطلب: ${ref}\nالخدمة: ${i.name}\nالكمية: ${n}\nالإجمالي: $${(n*i.price).toFixed(2)}\n${lines.join('\n')}\n\nتم الدفع عبر (بنكك / USDT). مرفق الإشعار.`;
+    const msg=`السلام عليكم\nرقم الطلب: ${ref}\nالخدمة: ${i.name}\nالكمية: ${n}\nالإجمالي: $${(n*i.price).toFixed(2)}\n${lines.join('\n')}${risky?'\nوافقت على شروط عدم الاسترداد.':''}\n\nتم الدفع عبر (بنكك / USDT). مرفق الإشعار.`;
     const a=document.createElement('a');a.className='btn';a.target='_blank';a.rel='noopener';
     a.href=`https://wa.me/${WA}?text=`+encodeURIComponent(msg);a.textContent='أكمل الدفع وأرسل الإشعار عبر واتساب';
     b.replaceWith(a);err.style.color='#166534';err.textContent='تم تسجيل طلبك برقم '+ref+'. ادفع ثم أرسل الإشعار.';
   };
   el.append(tot,err,b);return el;
 }
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+let dip=null;const ib=$('install');
+const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+let dismissed=false;try{dismissed=localStorage.getItem('ms_install_x')==='1'}catch(e){}
+function showInstall(t){if(standalone||dismissed)return;if(t)$('installTxt').textContent=t;ib.hidden=false}
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();dip=e;showInstall()});
+addEventListener('appinstalled',()=>{ib.hidden=true;dip=null});
+$('installBtn').onclick=async()=>{if(dip){dip.prompt();await dip.userChoice;dip=null;ib.hidden=true}else toast('من قائمة المتصفح اختر: تثبيت التطبيق')};
+$('installX').onclick=()=>{ib.hidden=true;try{localStorage.setItem('ms_install_x','1')}catch(e){}};
+if(/iphone|ipad|ipod/i.test(navigator.userAgent)&&!standalone){$('installBtn').hidden=true;showInstall('لتثبيت التطبيق: اضغط زر المشاركة ثم "إضافة إلى الشاشة الرئيسية"')}
 load();
 </script>
 </body>
