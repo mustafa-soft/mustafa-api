@@ -1,5 +1,5 @@
-const V = 'ms-v1';
-const SHELL = ['/', '/index.html', '/manifest.json', '/192x192_.png', '/512x512_.png'];
+const V = 'ms-v2';
+const SHELL = ['/', '/manifest.json', '/192x192_.png', '/512x512_.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -19,20 +19,18 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const r = e.request, u = new URL(r.url);
-  // لا نتدخل في طلبات الـ API (سيرفر آخر) ولا في الطلبات غير GET
   if (r.method !== 'GET' || u.origin !== location.origin) return;
-  if (r.mode === 'navigate') {
+  // الصفحة الرئيسية: الشبكة أولًا ثم النسخة المحفوظة عند انقطاع النت
+  if (r.mode === 'navigate' && u.pathname === '/') {
     e.respondWith(
       fetch(r)
-        .then(res => { const cp = res.clone(); caches.open(V).then(c => c.put('/index.html', cp)); return res; })
-        .catch(() => caches.match('/index.html'))
+        .then(res => { const cp = res.clone(); caches.open(V).then(c => c.put('/', cp)); return res; })
+        .catch(() => caches.match('/'))
     );
     return;
   }
-  e.respondWith(
-    caches.match(r).then(hit => hit || fetch(r).then(res => {
-      if (res.ok) { const cp = res.clone(); caches.open(V).then(c => c.put(r, cp)); }
-      return res;
-    }))
-  );
+  // الملفات الثابتة فقط. أي مسار آخر (الخدمات، الطلبات، الإدارة) يمر مباشرة دون تخزين
+  if (SHELL.includes(u.pathname)) {
+    e.respondWith(caches.match(r).then(hit => hit || fetch(r)));
+  }
 });

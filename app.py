@@ -2,9 +2,11 @@ import os
 import time
 import uuid
 import hmac
+import base64
 import json
 import re
 import threading
+import zlib
 import logging
 
 import requests
@@ -113,8 +115,23 @@ def cached_products(product_id=None):
     hit = _cache.get(key)
     if hit and now - hit[0] < CACHE_TTL:
         return hit[1]
-    params = {"product_id": product_id} if product_id else None
-    data = call_api("GET", "/products", params=params)
+    data = None
+    if REDIS and not product_id:
+        try:
+            raw = _redis(["GET", "ms:products"])
+            if raw:
+                data = json.loads(zlib.decompress(base64.b64decode(raw)))
+        except Exception:
+            data = None
+    if data is None:
+        params = {"product_id": product_id} if product_id else None
+        data = call_api("GET", "/products", params=params)
+        if REDIS and not product_id:
+            try:
+                blob = base64.b64encode(zlib.compress(json.dumps(data, ensure_ascii=False).encode(), 6)).decode()
+                _redis(["SET", "ms:products", blob, "EX", str(CACHE_TTL)])
+            except Exception:
+                pass
     _cache[key] = (now, data)
     return data
 
@@ -223,7 +240,8 @@ def health():
         "configured": bool(API_TOKEN and BASE_URL),
         "admin_protected": bool(ADMIN_SECRET),
         "callback_ready": bool(PUBLIC_URL.startswith("https://")),
-        "storage": "redis" if REDIS_READY else "file",
+        "storage": "redis" if REDIS else "memory",
+        "platform": "vercel" if os.getenv("VERCEL") else "other",
     }
 
 
@@ -287,12 +305,11 @@ async def callback(request: Request):
 ORDERS_FILE = os.getenv("ORDERS_FILE", "/tmp/orders.json")
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT = os.getenv("TELEGRAM_CHAT_ID", "")
-_lock = threading.Lock()
-_hits = {}
 UP_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").rstrip("/")
 UP_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
-REDIS_KEY = "ms:orders"
-REDIS_READY = False
+REDIS = bool(UP_URL and UP_TOKEN)
+HKEY = "ms:o"  # hash: الحقل = رقم الطلب، القيمة = بيانات الطلب
+_mem, _mem_hits = {}, {}  # بديل للتجربة المحلية فقط
 
 
 def _redis(cmd):
@@ -301,41 +318,67 @@ def _redis(cmd):
     return r.json().get("result")
 
 
-def _load_orders():
-    global REDIS_READY
-    if UP_URL and UP_TOKEN:
-        for _ in range(3):
-            try:
-                raw = _redis(["GET", REDIS_KEY])
-                REDIS_READY = True
-                return json.loads(raw) if raw else {}
-            except Exception:
-                time.sleep(1)
-        # لا نكتب على Redis إذا فشلت القراءة، حتى لا نمسح بيانات موجودة
-        log.warning("redis unavailable: using file storage only")
+def _r(cmd):
     try:
-        with open(ORDERS_FILE) as f:
-            return json.load(f)
+        return _redis(cmd)
     except Exception:
-        return {}
+        raise HTTPException(status_code=503, detail="Storage unavailable")
 
 
-ORDERS = _load_orders()
+def o_get(ref):
+    if not REDIS:
+        return _mem.get(ref)
+    raw = _r(["HGET", HKEY, ref])
+    return json.loads(raw) if raw else None
 
 
-def save_orders():
-    newest = sorted(ORDERS.items(), key=lambda kv: kv[1]["created"], reverse=True)[:1000]
-    blob = json.dumps(dict(newest), ensure_ascii=False)
-    if REDIS_READY:
+def o_set(o):
+    if not REDIS:
+        _mem[o["ref"]] = o
+        return
+    _r(["HSET", HKEY, o["ref"], json.dumps(o, ensure_ascii=False)])
+
+
+def o_all():
+    if not REDIS:
+        return list(_mem.values())
+    res = _r(["HGETALL", HKEY]) or []
+    if not res:  # ترحيل لمرة واحدة من التخزين القديم
+        old = _r(["GET", "ms:orders"])
+        if old:
+            orders = json.loads(old)
+            for o in orders.values():
+                o_set(o)
+            return list(orders.values())
+    return [json.loads(v) for v in res[1::2]]
+
+
+def lock(ref, ttl=120):
+    """قفل مشترك بين كل النسخ: يمنع تنفيذ الطلب مرتين."""
+    if not REDIS:
+        return True
+    return _r(["SET", f"ms:lock:{ref}", "1", "NX", "EX", str(ttl)]) == "OK"
+
+
+def unlock(ref):
+    if REDIS:
         try:
-            _redis(["SET", REDIS_KEY, blob])
+            _redis(["DEL", f"ms:lock:{ref}"])
         except Exception:
-            log.warning("redis save failed")
-    try:
-        with open(ORDERS_FILE, "w") as f:
-            f.write(blob)
-    except OSError:
-        log.warning("could not save orders file")
+            pass
+
+
+def rate_ok(ip):
+    if REDIS:
+        k = f"ms:rl:{ip}"
+        _r(["SET", k, "0", "EX", "3600", "NX"])
+        return int(_r(["INCR", k])) <= 10
+    now = time.time()
+    hits = [t for t in _mem_hits.get(ip, []) if now - t < 3600]
+    ok = len(hits) < 10
+    hits.append(now)
+    _mem_hits[ip] = hits
+    return ok
 
 
 def notify(text):
@@ -398,15 +441,10 @@ class RequestIn(BaseModel):
 @app.post("/request")
 def create_request(item: RequestIn, request: Request):
     fwd = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")
-    ip, now = fwd.split(",")[0].strip(), time.time()
-    with _lock:
-        hits = [t for t in _hits.get(ip, []) if now - t < 3600]
-        if len(hits) >= 10:
-            raise HTTPException(status_code=429, detail="Too many requests")
-        hits.append(now)
-        _hits[ip] = hits
-        if sum(1 for o in ORDERS.values() if o["status"] == "pending") >= 300:
-            raise HTTPException(status_code=503, detail="Busy, try later")
+    if not rate_ok(fwd.split(",")[0].strip()):
+        raise HTTPException(status_code=429, detail="Too many requests")
+    if REDIS and int(_r(["HLEN", HKEY]) or 0) >= 5000:
+        raise HTTPException(status_code=503, detail="Busy, try later")
     p = get_product(item.product_id)
     clean, has_qty = check_fields(p, item.values, item.quantity)
     cost = float(p.get("price") or 0)
@@ -415,82 +453,97 @@ def create_request(item: RequestIn, request: Request):
         raise HTTPException(status_code=503, detail="Price unavailable")
     ref = "ms-" + uuid.uuid4().hex[:20]
     order = {
-        "ref": ref, "created": now, "product_id": str(item.product_id), "name": p.get("name"),
+        "ref": ref, "created": time.time(), "product_id": str(item.product_id), "name": p.get("name"),
         "fields": clean, "has_qty": has_qty, "qty": item.quantity,
         "total": round(unit * item.quantity, 2), "cost": round(cost * item.quantity, 2),
         "status": "pending", "error": None, "uuid": None, "provider": None,
     }
-    with _lock:
-        ORDERS[ref] = order
-        save_orders()
+    o_set(order)
     notify(f"طلب جديد {ref}\n{order['name']}\nالكمية: {item.quantity}\nالإجمالي: ${order['total']}\n{clean}")
     return {"ref": ref, "total": order["total"], "status": "pending"}
 
 
 @app.get("/admin/orders", dependencies=[Depends(require_admin)])
 def admin_orders():
-    return sorted(ORDERS.values(), key=lambda o: o["created"], reverse=True)[:200]
+    now, out = time.time(), []
+    for o in o_all():
+        if o["status"] == "sending" and now - o.get("sent_at", now) > 300:
+            o["status"] = "unknown"
+            o["error"] = "انقطع التنفيذ دون رد. تحقق من حسابك عند GalleUnlockers قبل أي إعادة."
+            o_set(o)
+        out.append(o)
+    return sorted(out, key=lambda o: o["created"], reverse=True)[:200]
 
 
 @app.post("/admin/orders/{ref}/execute", dependencies=[Depends(require_admin)])
 def admin_execute(ref: str):
-    with _lock:
-        o = ORDERS.get(ref)
+    if not PUBLIC_URL.startswith("https://"):
+        raise HTTPException(status_code=503, detail="PUBLIC_URL (https) is not configured")
+    if not lock(ref, 120):
+        raise HTTPException(status_code=409, detail="Order is being processed")
+    try:
+        o = o_get(ref)
         if not o:
             raise HTTPException(status_code=404, detail="Order not found")
         if o["status"] != "pending":
             raise HTTPException(status_code=409, detail=f"Order is {o['status']}")
-        o["status"] = "sending"
-        save_orders()
-    if not PUBLIC_URL.startswith("https://"):
-        o["status"] = "pending"
-        raise HTTPException(status_code=503, detail="PUBLIC_URL (https) is not configured")
-    fields = dict(o["fields"])
-    fields.update({"feedback_url": f"{PUBLIC_URL}/callback", "reference_id": ref})
-    if o["has_qty"]:
-        fields["Quantity"] = o["qty"]
-    pid = o["product_id"]
-    payload = [{"product_id": int(pid) if pid.isdigit() else pid, "fields": [fields]}]
-    try:
-        res = call_api("POST", "/order", body=payload, timeout=120)
-    except HTTPException as e:
-        with _lock:
-            # رفض واضح من المزوّد: نعيده للانتظار. غير ذلك: النتيجة مجهولة فلا نكرر التنفيذ تلقائيًا
+        o["status"], o["sent_at"] = "sending", time.time()
+        o_set(o)  # نحفظ الحالة قبل الاتصال بالمزوّد، فلا يتكرر التنفيذ حتى لو انقطع الرد
+        fields = dict(o["fields"])
+        fields.update({"feedback_url": f"{PUBLIC_URL}/callback", "reference_id": ref})
+        if o["has_qty"]:
+            fields["Quantity"] = o["qty"]
+        pid = o["product_id"]
+        payload = [{"product_id": int(pid) if pid.isdigit() else pid, "fields": [fields]}]
+        try:
+            res = call_api("POST", "/order", body=payload, timeout=55)
+        except HTTPException as e:
+            # رفض واضح من المزوّد: يرجع للانتظار. غير ذلك: النتيجة مجهولة فلا نكرر تلقائيًا
             o["status"] = "pending" if 400 <= e.status_code < 500 else "unknown"
             o["error"] = str(e.detail)
-            save_orders()
-        raise
-    with _lock:
+            o_set(o)
+            raise
         o["status"], o["provider"], o["error"] = "submitted", res, None
         try:
             o["uuid"] = res["data"][0][0]["order_uuid"]
         except (KeyError, IndexError, TypeError):
             pass
-        save_orders()
-    return o
+        o_set(o)
+        return o
+    finally:
+        unlock(ref)
 
 
 @app.post("/admin/orders/{ref}/reject", dependencies=[Depends(require_admin)])
 def admin_reject(ref: str):
-    with _lock:
-        o = ORDERS.get(ref)
+    if not lock(ref, 30):
+        raise HTTPException(status_code=409, detail="Order is being processed")
+    try:
+        o = o_get(ref)
         if not o or o["status"] not in ("pending", "unknown"):
             raise HTTPException(status_code=409, detail="Cannot reject")
         o["status"] = "rejected"
-        save_orders()
-    return o
+        o_set(o)
+        return o
+    finally:
+        unlock(ref)
 
 
 @app.get("/admin/orders/{ref}/refresh", dependencies=[Depends(require_admin)])
 def admin_refresh(ref: str):
-    o = ORDERS.get(ref)
+    o = o_get(ref)
     if not o or not o.get("uuid"):
         raise HTTPException(status_code=404, detail="No provider order yet")
     res = call_api("GET", "/order", params={"order_uuid": o["uuid"]})
-    with _lock:
+    if not lock(ref, 30):
+        raise HTTPException(status_code=409, detail="Order is being processed")
+    try:
+        o = o_get(ref) or o
         o["provider"] = res
-        save_orders()
-    return o
+        o_set(o)
+        return o
+    finally:
+        unlock(ref)
 
 
 ADMIN_HTML = r"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>لوحة الإدارة</title>
