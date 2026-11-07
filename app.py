@@ -547,7 +547,7 @@ def admin_refresh(ref: str):
 
 
 ADMIN_HTML = r"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>لوحة الإدارة</title>
-<style>body{font-family:system-ui,sans-serif;background:#F8FAFC;color:#0F172A;margin:0;padding:16px;max-width:860px;margin-inline:auto}input,button{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid #CBD5E1}button{background:#0F172A;color:#fff;border:0;cursor:pointer;margin:4px 0 0 6px}button.g{background:#E2E8F0;color:#0F172A}.c{background:#fff;border:1px solid #E2E8F0;border-radius:14px;padding:14px;margin:10px 0}.m{color:#64748B;font-size:13px}.s{display:inline-block;padding:2px 10px;border-radius:99px;background:#E2E8F0;font-size:12px}.b{font-size:24px;font-weight:700;direction:ltr}.e{color:#B91C1C;font-size:13px}[hidden]{display:none!important}pre{white-space:pre-wrap;direction:ltr;text-align:left;font-size:12px;background:#F1F5F9;padding:8px;border-radius:8px;margin:6px 0}</style></head><body>
+<style>body{font-family:system-ui,sans-serif;background:#F8FAFC;color:#0F172A;margin:0;padding:16px;max-width:860px;margin-inline:auto;overflow-wrap:anywhere;word-break:break-word}input,button{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid #CBD5E1}button{background:#0F172A;color:#fff;border:0;cursor:pointer;margin:4px 0 0 6px}button.g{background:#E2E8F0;color:#0F172A}.c{background:#fff;border:1px solid #E2E8F0;border-radius:14px;padding:14px;margin:10px 0}.m{color:#64748B;font-size:13px}.s{display:inline-block;padding:2px 10px;border-radius:99px;background:#E2E8F0;font-size:12px}.b{font-size:24px;font-weight:700;direction:ltr}.e{color:#B91C1C;font-size:13px}[hidden]{display:none!important}pre{max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap;direction:ltr;text-align:left;font-size:12px;background:#F1F5F9;padding:8px;border-radius:8px;margin:6px 0}</style></head><body>
 <h1>لوحة الإدارة</h1>
 <div id="login" class="c"><input id="key" type="password" placeholder="كلمة سر الإدارة" autocomplete="off"><button id="go">دخول</button><p class="m" id="msg"></p></div>
 <div id="app" hidden>
@@ -573,6 +573,7 @@ async function load(){
     if(o.status==='pending'||o.status==='unknown')act('رفض',()=>api('/admin/orders/'+o.ref+'/reject','POST'),1);
     if(o.uuid)act('تحديث الحالة',()=>api('/admin/orders/'+o.ref+'/refresh'),1);
     if(o.provider&&o.uuid){const st=(o.provider.data&&o.provider.data.status)||'';if(st)c.append(el('div','m','حالة المزوّد: '+st))}
+    if(o.status==='submitted')c.append(el('div','m','رد المزوّد: '+((o.provider&&o.provider.message)||'-')+(o.uuid?'':' | لا يوجد رقم متابعة، راجع الطلب في GalleUnlockers')));
     L.append(c)})}
 $('go').onclick=async()=>{K=$('key').value;try{await api('/admin/orders');$('login').hidden=true;$('app').hidden=false;load()}catch(e){$('msg').textContent='كلمة السر غير صحيحة'}};
 $('rf').onclick=load;
