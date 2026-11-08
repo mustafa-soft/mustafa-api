@@ -391,11 +391,10 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 UUID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
 
-class OrderIn(BaseModel):
+class RequestIn(BaseModel):
     product_id: str = Field(..., min_length=1, max_length=64)
-    email: str = Field(..., min_length=5, max_length=120)
-    quantity: int = Field(1, ge=1, le=10)
-    extra: dict = Field(default_factory=dict)
+    values: dict = Field(default_factory=dict)
+    quantity: int = Field(1, ge=1, le=100000)
 
 
 class PlaceIn(BaseModel):
@@ -413,41 +412,55 @@ def health():
     }
 
 
-@router.get("/products")
-def list_products():
-    currency, categories, items = catalog()
+@router.get("/catalog")
+def catalog_route(limit: int = 200, offset: int = 0, q: str = ""):
+    """الواجهة تنادي: /catalog?limit=200&offset=0 وتتوقع {total, items}."""
+    currency, _, items = catalog()
+    ql = q.strip().lower()
+    if ql:
+        items = [i for i in items if ql in (i["name"] or "").lower()]
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+    page = items[offset:offset + limit]
     return {
         "currency": currency,
-        "categories": categories,
-        "products": [{k: v for k, v in i.items() if k != "cost"} for i in items],
+        "total": len(items),
+        "items": [{k: v for k, v in i.items() if k != "cost"} for i in page],
     }
 
 
-def build_fields(product, email, extra):
-    """يبني حقول المورد من schema المنتج (الإيميل يُعبّأ تلقائيًا)."""
-    lowered = {str(k).lower(): v for k, v in (extra or {}).items()}
+def build_fields(product, values):
+    """يبني حقول المورد من schema المنتج. حقل quantity يُعامل كحدود للكمية."""
+    lowered = {str(k).lower(): v for k, v in (values or {}).items()}
     out = {}
+    qmin, qmax = 1, 1
     for f in product.get("fields") or []:
         if not isinstance(f, dict) or not f.get("name"):
             continue
         name = str(f["name"])
         ftype = str(f.get("type") or "").lower()
-        if ftype == "email" or name.lower() == "email":
-            val = email
-        else:
-            val = lowered.get(name.lower())
-            val = str(val).strip() if val is not None else ""
+        if ftype == "quantity":
+            try:
+                qmin = max(1, int(f.get("min") or 1))
+                qmax = int(f.get("max") or 100000)
+            except (TypeError, ValueError):
+                pass
+            continue
+        val = lowered.get(name.lower())
+        val = str(val).strip() if val is not None else ""
         if f.get("required") and not val:
             raise HTTPException(status_code=422, detail=f"Missing field: {name}")
         if val:
             if len(val) > 200:
                 raise HTTPException(status_code=422, detail=f"Field too long: {name}")
+            if ftype == "email" and not EMAIL_RE.match(val):
+                raise HTTPException(status_code=422, detail="Invalid email")
             out[name] = val
-    return out
+    return out, qmin, qmax
 
 
-@router.post("/order")
-def create_order(body: OrderIn, request: Request):
+@router.post("/request")
+def create_request(body: RequestIn, request: Request):
     """طلب الزبون: يُسجَّل ويصلك على تيليجرام. التنفيذ عند المورد بعد تأكيد الدفع من /admin."""
     if not (ADMIN_SECRET and TG_TOKEN and TG_CHAT):
         raise HTTPException(status_code=503, detail="Server not configured")
@@ -455,25 +468,24 @@ def create_order(body: OrderIn, request: Request):
     if not rate_ok(ip):
         raise HTTPException(status_code=429, detail="Too many requests, try later")
 
-    email = body.email.strip().lower()
-    if not EMAIL_RE.match(email):
-        raise HTTPException(status_code=422, detail="Invalid email")
-
     product = find_product(body.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    fields = build_fields(product, email, body.extra)
+    fields, qmin, qmax = build_fields(product, body.values)
+    if not (qmin <= body.quantity <= qmax):
+        raise HTTPException(status_code=422, detail=f"Quantity must be {qmin}-{qmax}")
 
-    dedupe = hashlib.sha1(f"{email}|{product['id']}".encode()).hexdigest()
+    dedupe = hashlib.sha1(
+        json.dumps([product["id"], fields, body.quantity], sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()
     if not lock(f"new:{dedupe}", 60):
-        raise HTTPException(status_code=409, detail="Duplicate order, wait a minute")
+        raise HTTPException(status_code=409, detail="Duplicate request, wait a minute")
 
     payload = {
         "p": product["id"],
         "n": product["name"],
         "f": fields,
-        "e": email,
         "q": body.quantity,
         "pr": product["price"],
         "t": int(time.time()),
@@ -481,18 +493,19 @@ def create_order(body: OrderIn, request: Request):
     token = make_token(payload)
     code = "MS-" + token_hash(token)[:8].upper()
     total = round(product["price"] * body.quantity, 2)
+    lines = "\n".join(f"{k}: {v}" for k, v in fields.items()) or "-"
 
     sent = notify(
         f"طلب جديد {code}\n"
         f"الخدمة: {product['name']}\n"
-        f"الإيميل: {email}\n"
         f"الكمية: {body.quantity}\n"
-        f"السعر: ${total}\n\n"
+        f"الإجمالي: ${total}\n"
+        f"{lines}\n\n"
         f"بعد تأكيد الدفع الصق الرمز في /admin:\n{token}"
     )
     if not sent:
         unlock(f"new:{dedupe}")
-        raise HTTPException(status_code=502, detail="Could not deliver the order, contact us on WhatsApp")
+        raise HTTPException(status_code=502, detail="Could not deliver the request")
 
     return {"ok": True, "ref": code, "price": total}
 
