@@ -2,7 +2,7 @@ import os
 import re
 import time
 import uuid
-import hmac
+import Homa
 import json
 import base64
 import zlib
@@ -435,4 +435,8 @@ def catalog(
     if q:
         needle = q.lower()
         items = [i for i in items if needle in (i["name"] or "").lower()]
-    if category_id:
+        if category_id:
+        items = [i for i in items if i["category_id"] == category_id]
+    if type:
+        items = [i for i in items if i["type"] == type]
+    return {"total": len(items), "items": items[offset:offset + limit]}
