@@ -48,8 +48,12 @@ input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid 
 .card input{direction:ltr;text-align:left}
 .err{color:var(--err);font-size:12px;min-height:0}
 .total{font-size:13px;color:var(--mute)}
-.warn{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:10px;padding:10px;font-size:12.5px}.ack{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:500}.ack input{width:auto;height:auto;margin-top:5px}
-.install{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#0F172A;color:#fff;padding:10px 16px;font-size:14px}.install span{flex:1;min-width:180px}.install .btn{height:36px;padding:0 14px}
+.warn{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:10px;padding:10px;font-size:12.5px}
+.ack{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:500}
+.ack input{width:auto;height:auto;margin-top:5px}
+.install{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#0F172A;color:#fff;padding:10px 16px;font-size:14px}
+.install span{flex:1;min-width:180px}
+.install .btn{height:36px;padding:0 14px}
 .state{padding:28px 16px;text-align:center;color:var(--mute);background:var(--card);border:1px dashed var(--line);border-radius:14px}
 .more{display:block;margin:20px auto}
 footer{margin-top:40px;border-top:1px solid var(--line);background:#fff;padding:24px 0 calc(24px + env(safe-area-inset-bottom))}
@@ -106,9 +110,11 @@ footer p{margin:4px 0;font-size:13px;color:var(--mute)}
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-const API='', WA='249900287738', PAGE=24;
+// عنوان الـAPI: هنا الخدمات بتيجي من mustafa-api
+const API='https://mustafa-api-mu.vercel.app', WA='249900287738', PAGE=24;
 const ONLY='';
-const RISKY_PRICE=15; // الخدمات الأغلى من هذا السعر أو اسمها فيه FRP تحتاج موافقة على شروط عدم الاسترداد // يعرض خدمات سامسونج فقط. غيّر الكلمة أو اتركها فارغة لعرض كل الخدمات
+// الخدمات الأغلى من هذا السعر، أو اسمها فيه FRP، بتطلب موافقة على شروط عدم الاسترداد
+const RISKY_PRICE=15;
 const $=id=>document.getElementById(id);
 let ALL=[], VIEW=[], shown=0;
 $('waTop').href=$('waFoot').href='https://wa.me/'+WA;
