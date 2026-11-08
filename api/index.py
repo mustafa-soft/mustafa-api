@@ -50,6 +50,10 @@ GALLE_KEY = next(
     (v for v in (env("GALLE_API_TOK"), env("GALLE_API_TOKEN"), env("GALLE_TOKEN")) if v),
     "",
 )
+IU_URL = env("IMEI_UNLOCK_API_URL").rstrip("/")
+IU_USER = env("IMEI_UNLOCK_USERNAME")
+IU_KEY = env("IMEI_UNLOCK_API_KEY")
+IU_ENABLED = bool(IU_URL and IU_USER and IU_KEY)
 ADMIN_SECRET = env("ADMIN_SECRET")
 ALLOWED_ORIGIN = env("ALLOWED_ORIGIN", "https://mustafa-soft.com").rstrip("/")
 PUBLIC_URL = env("PUBLIC_URL").rstrip("/")
@@ -281,7 +285,7 @@ def time_text(pid, name, original):
     return original or ""
 
 
-def catalog():
+def catalog_galle():
     """يرجع (العملة، الأقسام، المنتجات) من رد المورد: data.products مفتاحها رقم المنتج."""
     raw = products_raw()
     d = raw.get("data") if isinstance(raw.get("data"), dict) else {}
@@ -315,9 +319,128 @@ def catalog():
                 "price": markup_price(cost, cid, cat_name),
                 "time": time_text(pid, p.get("name", ""), p.get("time", "")),
                 "fields": fields,
+                "supplier": "galle",
             }
         )
     return d.get("currency", "USD"), list(categories.values()), items
+
+
+# ---------------------------------------------------------------
+# imei-unlock.net (Dhru Fusion الكلاسيكي): imeiservicelist
+# يتفعّل فقط لو المتغيرات الثلاثة IMEI_UNLOCK_* موجودة في Vercel
+# ---------------------------------------------------------------
+def _num(v):
+    m = re.search(r"\d+(?:\.\d+)?", str(v if v is not None else ""))
+    return float(m.group()) if m else 0.0
+
+
+def iu_call(action, timeout=30):
+    url = IU_URL if IU_URL.lower().endswith(".php") else IU_URL + "/api/index.php"
+    try:
+        r = requests.post(
+            url,
+            data={
+                "username": IU_USER,
+                "apiaccesskey": IU_KEY,
+                "action": action,
+                "requestformat": "JSON",
+            },
+            timeout=timeout,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="imei-unlock unreachable")
+    try:
+        data = r.json()
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+    except ValueError:
+        raise HTTPException(
+            status_code=502,
+            detail=f"imei-unlock returned HTTP {r.status_code} (not JSON)",
+        )
+    err = data.get("ERROR")
+    if err:
+        msg = err[0].get("MESSAGE") if isinstance(err, list) and err and isinstance(err[0], dict) else str(err)[:200]
+        raise HTTPException(status_code=502, detail=f"imei-unlock error: {msg}")
+    return data
+
+
+def catalog_iu():
+    now = time.time()
+    hit = _cache.get("iu")
+    if hit and now - hit[0] < CACHE_TTL:
+        return hit[1]
+
+    data = iu_call("imeiservicelist")
+    succ = data.get("SUCCESS")
+    first = succ[0] if isinstance(succ, list) and succ else (succ if isinstance(succ, dict) else {})
+    lst = first.get("LIST") or {}
+    groups = lst.values() if isinstance(lst, dict) else lst
+
+    items = []
+    for g in groups:
+        if not isinstance(g, dict):
+            continue
+        gname = str(g.get("GROUPNAME") or "")
+        gtype = "server" if "server" in str(g.get("GROUPTYPE") or "").lower() else "imei"
+        svcs = g.get("SERVICES") or {}
+        for sv in (svcs.values() if isinstance(svcs, dict) else svcs):
+            if not isinstance(sv, dict) or sv.get("SERVICEID") in (None, ""):
+                continue
+            sid = str(sv["SERVICEID"])
+            cost = _num(sv.get("CREDIT"))
+            cid = "iu-" + gname
+            fields = []
+            if gtype == "imei":
+                fields.append({"type": "imei", "name": "IMEI", "required": True})
+            custom = sv.get("Requires.Custom")
+            if isinstance(custom, list):
+                for c in custom:
+                    if not isinstance(c, dict):
+                        continue
+                    nm = c.get("fieldname") or c.get("description")
+                    if nm:
+                        fields.append(
+                            {
+                                "type": str(c.get("fieldtype") or "text").lower(),
+                                "name": str(nm),
+                                "required": str(c.get("required")).lower() in ("1", "true", "yes"),
+                            }
+                        )
+            name = str(sv.get("SERVICENAME") or "")
+            items.append(
+                {
+                    "id": "iu-" + sid,
+                    "name": name,
+                    "type": gtype,
+                    "category_id": cid,
+                    "category": gname,
+                    "cost": cost,
+                    "price": markup_price(cost, cid, gname),
+                    "time": time_text("iu-" + sid, name, str(sv.get("TIME") or "")),
+                    "fields": fields,
+                    "supplier": "iu",
+                }
+            )
+    _cache["iu"] = (now, items)
+    return items
+
+
+def catalog():
+    """يدمج خدمات GalleUnlockers مع imei-unlock.net (لو مفعّل). فشل مورد لا يوقف الآخر."""
+    currency, cats, items = "USD", [], []
+    try:
+        currency, cats, items = catalog_galle()
+    except HTTPException as e:
+        if not IU_ENABLED:
+            raise
+        log.error("galle catalog failed: %s", e.detail)
+    if IU_ENABLED:
+        try:
+            items = items + catalog_iu()
+        except HTTPException as e:
+            log.error("imei-unlock catalog failed: %s", e.detail)
+    return currency, cats, items
 
 
 def find_product(pid):
@@ -337,8 +460,15 @@ def notify(text):
             json={"chat_id": TG_CHAT, "text": text[:4000]},
             timeout=8,
         )
+        if r.status_code != 200:
+            try:
+                desc = r.json().get("description")
+            except ValueError:
+                desc = ""
+            log.error("telegram failed: HTTP %s %s", r.status_code, desc)
         return r.status_code == 200
-    except Exception:
+    except Exception as e:
+        log.error("telegram request error: %s", type(e).__name__)
         return False
 
 
@@ -409,6 +539,7 @@ def health():
         "supplier": bool(GALLE_URL and GALLE_KEY),
         "telegram": bool(TG_TOKEN and TG_CHAT),
         "admin": bool(ADMIN_SECRET),
+        "imei_unlock": IU_ENABLED,
     }
 
 
@@ -425,7 +556,7 @@ def catalog_route(limit: int = 200, offset: int = 0, q: str = ""):
     return {
         "currency": currency,
         "total": len(items),
-        "items": [{k: v for k, v in i.items() if k != "cost"} for i in page],
+        "items": [{k: v for k, v in i.items() if k not in ("cost", "supplier")} for i in page],
     }
 
 
@@ -498,6 +629,7 @@ def create_request(body: RequestIn, request: Request):
     sent = notify(
         f"طلب جديد {code}\n"
         f"الخدمة: {product['name']}\n"
+        f"المورد: {'imei-unlock.net (تنفيذ يدوي)' if product.get('supplier') == 'iu' else 'GalleUnlockers'}\n"
         f"الكمية: {body.quantity}\n"
         f"الإجمالي: ${total}\n"
         f"{lines}\n\n"
@@ -510,6 +642,38 @@ def create_request(body: RequestIn, request: Request):
     return {"ok": True, "ref": code, "price": total}
 
 
+@router.get("/selftest")
+def selftest(k: str = ""):
+    """فحص سريع: افتحه /selftest?k=ADMIN_SECRET. يرسل رسالة تجريبية لتيليجرام ويعرض سبب الفشل."""
+    if not ADMIN_SECRET or not hmac.compare_digest(k.encode(), ADMIN_SECRET.encode()):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    out = {"telegram_configured": bool(TG_TOKEN and TG_CHAT)}
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+            json={"chat_id": TG_CHAT, "text": "selftest ok"},
+            timeout=8,
+        )
+        j = r.json()
+        out["telegram"] = {"ok": bool(j.get("ok")), "http": r.status_code, "description": j.get("description")}
+    except Exception as e:
+        out["telegram"] = {"ok": False, "error": type(e).__name__}
+    if IU_ENABLED:
+        try:
+            out["imei_unlock_services"] = len(catalog_iu())
+        except HTTPException as e:
+            out["imei_unlock_error"] = e.detail
+    else:
+        out["imei_unlock"] = "not configured"
+    try:
+        _, _, items = catalog()
+        out["catalog_items"] = len(items)
+        out["sample_product_id"] = items[0]["id"] if items else None
+    except HTTPException as e:
+        out["catalog_error"] = {"http": e.status_code, "detail": e.detail}
+    return out
+
+
 # ------------------ الأدمن ------------------
 @router.post("/admin/place", dependencies=[Depends(require_admin)])
 def admin_place(body: PlaceIn, request: Request):
@@ -518,6 +682,18 @@ def admin_place(body: PlaceIn, request: Request):
     product = find_product(payload.get("p"))
     if not product:
         raise HTTPException(status_code=404, detail="Product no longer available")
+
+    if product.get("supplier") == "iu":
+        return {
+            "ok": True,
+            "manual": True,
+            "supplier": "imei-unlock.net",
+            "service_id": product["id"].replace("iu-", "", 1),
+            "service": product["name"],
+            "quantity": int(payload.get("q") or 1),
+            "fields": payload.get("f") or {},
+            "note": "نفّذ هذا الطلب يدويًا من لوحة imei-unlock.net بعد تأكيد الدفع.",
+        }
 
     h = token_hash(body.token)
     ref_id = "ms-" + h[:24]
