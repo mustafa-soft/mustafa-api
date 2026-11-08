@@ -49,6 +49,8 @@ GALLE_KEY = next(
     (v for v in (env("GALLE_API_TOK"), env("GALLE_API_TOKEN"), env("GALLE_TOKEN")) if v),
     "",
 )
+GALLE_PRODUCTS_PATH = env("GALLE_PRODUCTS_PATH", "/products")
+GALLE_ORDER_PATH = env("GALLE_ORDER_PATH", "/orders")
 ADMIN_SECRET = env("ADMIN_SECRET")
 ALLOWED_ORIGIN = env("ALLOWED_ORIGIN", "https://mustafa-soft.com").rstrip("/")
 
@@ -238,7 +240,7 @@ def products_raw(product_id=None):
             data = None
 
     if data is None:
-        path = f"/products/{product_id}" if product_id else "/products"
+        path = f"{GALLE_PRODUCTS_PATH}/{product_id}" if product_id else GALLE_PRODUCTS_PATH
         data = galle("GET", path)
         if REDIS and not product_id:
             try:
@@ -395,7 +397,7 @@ def create_order(body: OrderIn, request: Request):
         # عدّل المسار/الحقول هنا حسب توثيق المورد لو مختلفة
         supplier = galle(
             "POST",
-            "/orders",
+            GALLE_ORDER_PATH,
             body={"product_id": product["id"], "email": email, "reference": ref},
         )
     except HTTPException:
@@ -436,6 +438,29 @@ def admin_orders():
     orders = order_all()
     orders.sort(key=lambda o: o.get("created", 0), reverse=True)
     return orders
+
+
+@router.get("/debug/raw")
+def debug_raw(k: str = "", path: str = ""):
+    """تشخيص مؤقت: افتحه هكذا /debug/raw?k=ADMIN_SECRET&path=/products
+    احذفه بعد ما تنتهي من الضبط."""
+    if not ADMIN_SECRET or not hmac.compare_digest(k.encode(), ADMIN_SECRET.encode()):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    p = path or GALLE_PRODUCTS_PATH
+    if not p.startswith("/"):
+        p = "/" + p
+    try:
+        data = galle("GET", p)
+    except HTTPException as e:
+        return {"path": p, "error": e.status_code, "detail": e.detail}
+    text = json.dumps(data, ensure_ascii=False)
+    return {
+        "path": p,
+        "type": type(data).__name__,
+        "keys": list(data.keys())[:20] if isinstance(data, dict) else None,
+        "length": len(text),
+        "sample": text[:1200],
+    }
 
 
 app.include_router(router)
