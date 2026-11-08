@@ -71,7 +71,6 @@ TIME_RULES = env_json(
     [[["honor frp", "offline) fast"], "1-7 ساعات (قد تتأخر بعض الحالات)"]],
 )
 
-# الموردين لعرض الأرصدة
 SUPPLIERS = [
     {
         "name": "GalleUnlockers",
@@ -141,7 +140,7 @@ def order_all():
     if not REDIS:
         return list(_mem_orders.values())
     res = rcall(["HGETALL", HKEY]) or []
-    if not res:  # ترحيل من التخزين القديم لمرة واحدة
+    if not res:
         old = rcall(["GET", "ms:orders"])
         if old:
             orders = json.loads(old)
@@ -182,9 +181,8 @@ def rate_ok(ip):
 # الحماية
 # ---------------------------------------------------------------
 def require_admin(x_admin_key: str = Header("")):
-    if not ADMIN_SECRET or not hmac.compare_digest(
-        x_admin_key.encode(), ADMIN_SECRET.encode()
-    ):
+    key = x_admin_key.strip()
+    if not ADMIN_SECRET or not hmac.compare_digest(key.encode(), ADMIN_SECRET.encode()):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -269,7 +267,7 @@ def supplier_balance(s):
         user = env(s["user_env"])
         if not user:
             return {"error": f"{s['user_env']} غير مضبوط"}
-        params = {"username": user}  # عدّلها حسب وثائق المورد
+        params = {"username": user}
 
     try:
         r = requests.get(
@@ -393,7 +391,7 @@ def notify(text):
             timeout=10,
         )
     except requests.RequestException:
-        pass  # لا نسجّل الخطأ حتى لا يظهر التوكن في اللوجات
+        pass
 
 
 # ---------------------------------------------------------------
@@ -438,216 +436,3 @@ def catalog(
         needle = q.lower()
         items = [i for i in items if needle in (i["name"] or "").lower()]
     if category_id:
-        items = [i for i in items if i["category_id"] == category_id]
-    if type:
-        items = [i for i in items if i["type"] == type]
-    return {
-        "currency": currency,
-        "total": len(items),
-        "offset": offset,
-        "limit": limit,
-        "items": items[offset: offset + limit],
-    }
-
-
-class RequestIn(BaseModel):
-    product_id: str = Field(pattern=r"^[0-9A-Za-z-]{1,64}$")
-    values: dict[str, str] = Field(default_factory=dict)
-    quantity: int = Field(default=1, ge=1, le=100000)
-
-
-@app.post("/request")
-def create_request(item: RequestIn, request: Request):
-    fwd = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")
-    if not rate_ok(fwd.split(",")[0].strip()):
-        raise HTTPException(status_code=429, detail="Too many requests")
-    if REDIS and int(rcall(["HLEN", HKEY]) or 0) >= 5000:
-        raise HTTPException(status_code=503, detail="Busy, try later")
-
-    p = get_product(item.product_id)
-    clean, has_qty = check_fields(p, item.values, item.quantity)
-    cost = float(p.get("price") or 0)
-    unit = sale_price(cost, p.get("cid"))
-    if unit is None:
-        raise HTTPException(status_code=503, detail="Price unavailable")
-    if unit <= 0 or cost <= 0:
-        raise HTTPException(status_code=422, detail="Service not available for ordering")
-
-    ref = "ms-" + uuid.uuid4().hex[:20]
-    order = {
-        "ref": ref,
-        "created": time.time(),
-        "product_id": str(item.product_id),
-        "name": p.get("name"),
-        "fields": clean,
-        "has_qty": has_qty,
-        "qty": item.quantity,
-        "total": round(unit * item.quantity, 2),
-        "cost": round(cost * item.quantity, 2),
-        "status": "pending",
-        "error": None,
-        "uuid": None,
-        "provider": None,
-    }
-    order_set(order)
-    notify(f"طلب جديد {ref}\n{order['name']}\nالكمية: {item.quantity}\nالإجمالي: ${order['total']}\n{clean}")
-    return {"ref": ref, "total": order["total"], "status": "pending"}
-
-
-@app.post("/callback")
-async def callback(request: Request):
-    # إشعار فقط، ولا نثق فيه. الحالة النهائية تتأكد عبر /admin
-    try:
-        data = await request.json()
-        log.info("callback ref=%s status=%s", data.get("reference_id"), data.get("status"))
-    except Exception:
-        pass
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------
-# مسارات الإدارة (محمية بـX-Admin-Key)
-# ---------------------------------------------------------------
-@app.get("/admin/balances", dependencies=[Depends(require_admin)])
-def balances():
-    return [{"name": s["name"], **supplier_balance(s)} for s in SUPPLIERS]
-
-
-@app.get("/admin/orders", dependencies=[Depends(require_admin)])
-def admin_orders():
-    now, out = time.time(), []
-    for o in order_all():
-        if o["status"] == "sending" and now - o.get("sent_at", now) > 300:
-            o["status"] = "unknown"
-            o["error"] = "انقطع التنفيذ دون رد. تحقق من حسابك عند المورد قبل أي إعادة."
-            order_set(o)
-        out.append(o)
-    return sorted(out, key=lambda o: o["created"], reverse=True)[:200]
-
-
-@app.post("/admin/orders/{ref}/execute", dependencies=[Depends(require_admin)])
-def admin_execute(ref: str):
-    if not PUBLIC_URL.startswith("https://"):
-        raise HTTPException(status_code=503, detail="PUBLIC_URL (https) is not configured")
-    if not lock(ref, 120):
-        raise HTTPException(status_code=409, detail="Order is being processed")
-    try:
-        o = order_get(ref)
-        if not o:
-            raise HTTPException(status_code=404, detail="Order not found")
-        if o["status"] != "pending":
-            raise HTTPException(status_code=409, detail=f"Order is {o['status']}")
-
-        o["status"], o["sent_at"] = "sending", time.time()
-        order_set(o)  # نحفظ الحالة قبل الاتصال بالمزوّد
-
-        fields = dict(o["fields"])
-        fields.update({"feedback_url": f"{PUBLIC_URL}/callback", "reference_id": ref})
-        if o["has_qty"]:
-            fields["Quantity"] = o["qty"]
-        pid = o["product_id"]
-        payload = [{"product_id": int(pid) if pid.isdigit() else pid, "fields": [fields]}]
-
-        try:
-            res = galle("POST", "/order", body=payload, timeout=55)
-        except HTTPException as e:
-            # رفض واضح من المزوّد يرجّع للانتظار، غير ذلك النتيجة مجهولة فلا نكرر تلقائيًا
-            o["status"] = "pending" if 400 <= e.status_code < 500 else "unknown"
-            o["error"] = str(e.detail)
-            order_set(o)
-            raise
-
-        o["status"], o["provider"], o["error"] = "submitted", res, None
-        try:
-            o["uuid"] = res["data"][0][0]["order_uuid"]
-        except (KeyError, IndexError, TypeError):
-            pass
-        order_set(o)
-        return o
-    finally:
-        unlock(ref)
-
-
-@app.post("/admin/orders/{ref}/reject", dependencies=[Depends(require_admin)])
-def admin_reject(ref: str):
-    if not lock(ref, 30):
-        raise HTTPException(status_code=409, detail="Order is being processed")
-    try:
-        o = order_get(ref)
-        if not o or o["status"] not in ("pending", "unknown"):
-            raise HTTPException(status_code=409, detail="Cannot reject")
-        o["status"] = "rejected"
-        order_set(o)
-        return o
-    finally:
-        unlock(ref)
-
-
-@app.get("/admin/orders/{ref}/refresh", dependencies=[Depends(require_admin)])
-def admin_refresh(ref: str):
-    o = order_get(ref)
-    if not o or not o.get("uuid"):
-        raise HTTPException(status_code=404, detail="No provider order yet")
-    res = galle("GET", "/order", params={"order_uuid": o["uuid"]})
-    if not lock(ref, 30):
-        raise HTTPException(status_code=409, detail="Order is being processed")
-    try:
-        o = order_get(ref) or o
-        o["provider"] = res
-        order_set(o)
-        return o
-    finally:
-        unlock(ref)
-
-
-@app.get("/admin/products", dependencies=[Depends(require_admin)])
-def admin_products(product_id: str | None = Query(None, pattern=r"^[0-9A-Za-z-]{1,64}$")):
-    return products_raw(product_id)
-
-
-# ---------------------------------------------------------------
-# لوحة الإدارة
-# ---------------------------------------------------------------
-ADMIN_HTML = r"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>لوحة الإدارة</title>
-<style>body{font-family:system-ui,sans-serif;background:#F8FAFC;color:#0F172A;margin:0;padding:16px;max-width:860px;margin-inline:auto;overflow-wrap:anywhere;word-break:break-word}input,button{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid #CBD5E1}button{background:#0F172A;color:#fff;border:0;cursor:pointer;margin:4px 0 0 6px}button.g{background:#E2E8F0;color:#0F172A}.c{background:#fff;border:1px solid #E2E8F0;border-radius:14px;padding:14px;margin:10px 0}.m{color:#64748B;font-size:13px}.s{display:inline-block;padding:2px 10px;border-radius:99px;background:#E2E8F0;font-size:12px}.e{color:#B91C1C;font-size:13px}[hidden]{display:none!important}pre{max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap;direction:ltr;text-align:left;font-size:12px;background:#F1F5F9;padding:8px;border-radius:8px;margin:6px 0}</style></head><body>
-<h1>لوحة الإدارة</h1>
-<div id="login" class="c"><input id="key" type="password" placeholder="كلمة سر الإدارة" autocomplete="off"><button id="go">دخول</button><p class="m" id="msg"></p></div>
-<div id="app" hidden>
-<div class="c"><div class="m">أرصدة الموردين</div><div id="bal">...</div><button class="g" id="rf">تحديث</button></div>
-<h2>الطلبات</h2><div id="list"></div></div>
-<script>
-let K='';const $=i=>document.getElementById(i);
-const ST={pending:'بانتظار تأكيد الدفع',sending:'جاري الإرسال',submitted:'تم الإرسال للمزوّد',unknown:'نتيجة غير مؤكدة: تحقق من المورد',rejected:'مرفوض'};
-async function api(p,m){const r=await fetch(p,{method:m||'GET',headers:{'X-Admin-Key':K}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.detail==='string'?d.detail:r.status);return d}
-function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
-async function load(){
-  try{
-    const bs=await api('/admin/balances');
-    $('bal').innerHTML='';
-    bs.forEach(b=>$('bal').append(el('div','',b.error
-      ? b.name+': '+b.error
-      : b.name+': '+(b.balance??'?')+' '+(b.currency||''))));
-  }catch(e){$('bal').textContent='تعذر قراءة الأرصدة: '+e.message}
-  const os=await api('/admin/orders');const L=$('list');L.innerHTML='';
-  if(!os.length)L.append(el('p','m','لا توجد طلبات بعد.'));
-  os.forEach(o=>{
-    const c=el('div','c');c.append(el('b','',o.name),el('div','m',new Date(o.created*1000).toLocaleString('ar')+' | '+o.ref));
-    c.append(el('pre','',Object.entries(o.fields).map(([k,v])=>k+': '+v).join('\n')+'\nالكمية: '+o.qty));
-    c.append(el('div','',`الإجمالي: $${o.total} | تكلفتك: $${o.cost} | ربحك: $${(o.total-o.cost).toFixed(2)}`));
-    c.append(el('span','s',ST[o.status]||o.status));
-    if(o.error)c.append(el('div','e',o.error));
-    const act=(t,fn,g)=>{const b=el('button',g?'g':'',t);b.onclick=async()=>{b.disabled=true;try{await fn()}catch(e){alert(e.message)}load()};c.append(b)};
-    if(o.status==='pending')act('أكدت الدفع، نفّذ الآن',()=>confirm('سيتم خصم التكلفة من رصيدك. متأكد من استلام الدفع؟')?api('/admin/orders/'+o.ref+'/execute','POST'):0);
-    if(o.status==='pending'||o.status==='unknown')act('رفض',()=>api('/admin/orders/'+o.ref+'/reject','POST'),1);
-    if(o.uuid)act('تحديث الحالة',()=>api('/admin/orders/'+o.ref+'/refresh'),1);
-    if(o.provider&&o.uuid){const st=(o.provider.data&&o.provider.data.status)||'';if(st)c.append(el('div','m','حالة المزوّد: '+st))}
-    if(o.status==='submitted')c.append(el('div','m','رد المزوّد: '+((o.provider&&o.provider.message)||'-')+(o.uuid?'':' | لا يوجد رقم متابعة، راجع الطلب في المورد')));
-    L.append(c)})}
-$('go').onclick=async()=>{K=$('key').value;try{await api('/admin/orders');$('login').hidden=true;$('app').hidden=false;load()}catch(e){$('msg').textContent='كلمة السر غير صحيحة'}};
-$('rf').onclick=load;
-</script></body></html>"""
-
-
-@app.get("/admin", response_class=HTMLResponse)
-def admin_page():
-    return ADMIN_HTML
