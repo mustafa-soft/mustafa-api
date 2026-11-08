@@ -1,15 +1,16 @@
 import os
 import re
 import time
-import uuid
 import hmac
 import json
+import base64
 import hashlib
 import logging
 
 import requests
 from fastapi import FastAPI, APIRouter, Header, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO)
@@ -49,10 +50,10 @@ GALLE_KEY = next(
     (v for v in (env("GALLE_API_TOK"), env("GALLE_API_TOKEN"), env("GALLE_TOKEN")) if v),
     "",
 )
-GALLE_PRODUCTS_PATH = env("GALLE_PRODUCTS_PATH", "/products")
-GALLE_ORDER_PATH = env("GALLE_ORDER_PATH", "/orders")
 ADMIN_SECRET = env("ADMIN_SECRET")
 ALLOWED_ORIGIN = env("ALLOWED_ORIGIN", "https://mustafa-soft.com").rstrip("/")
+PUBLIC_URL = env("PUBLIC_URL").rstrip("/")
+ORDER_TIMEOUT = env_float("GALLE_ORDER_TIMEOUT", 60)
 
 UP_URL = env("UPSTASH_REDIS_REST_URL").rstrip("/")
 UP_TOKEN = env("UPSTASH_REDIS_REST_TOKEN")
@@ -70,7 +71,6 @@ TIME_RULES = env_json(
     [[["honor frp", "offline) fast"], "1-7 ساعات (قد تتأخر بعض الحالات)"]],
 )
 
-# السماح بالدومين مع www وبدونه
 _origins = {ALLOWED_ORIGIN}
 if "://www." in ALLOWED_ORIGIN:
     _origins.add(ALLOWED_ORIGIN.replace("://www.", "://"))
@@ -86,10 +86,9 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------
-# التخزين (Upstash Redis، أو الذاكرة لو مش متضبط)
+# Redis اختياري (للكاش والقفل وحد الطلبات). بدونه يشتغل بالذاكرة.
+# الطلبات نفسها ما بتتخزن: كل طلب بيوصلك على تيليجرام برمز موقّع.
 # ---------------------------------------------------------------
-HKEY = "ms:o"
-_mem_orders = {}
 _mem_hits = {}
 _mem_locks = {}
 _cache = {}
@@ -107,57 +106,29 @@ def _redis(cmd):
     return r.json().get("result")
 
 
-def rcall(cmd):
-    try:
-        return _redis(cmd)
-    except Exception as e:
-        log.error("redis error: %s", e)
-        raise HTTPException(status_code=503, detail="Storage unavailable")
-
-
-def order_get(ref):
-    if not REDIS:
-        return _mem_orders.get(ref)
-    raw = rcall(["HGET", HKEY, ref])
-    return json.loads(raw) if raw else None
-
-
-def order_set(o):
-    if not REDIS:
-        _mem_orders[o["ref"]] = o
-        return
-    rcall(["HSET", HKEY, o["ref"], json.dumps(o, ensure_ascii=False)])
-
-
-def order_all():
-    if not REDIS:
-        return list(_mem_orders.values())
-    res = rcall(["HGETALL", HKEY]) or []
-    return [json.loads(v) for v in res[1::2]]
-
-
 def lock(key, ttl):
-    if not REDIS:
-        now = time.time()
-        if _mem_locks.get(key, 0) > now:
-            return False
-        _mem_locks[key] = now + ttl
-        return True
-    return rcall(["SET", f"ms:lock:{key}", "1", "NX", "EX", str(ttl)]) == "OK"
+    if REDIS:
+        try:
+            return _redis(["SET", f"ms:lock:{key}", "1", "NX", "EX", str(ttl)]) == "OK"
+        except Exception as e:
+            log.error("redis lock error: %s", e)
+    now = time.time()
+    if _mem_locks.get(key, 0) > now:
+        return False
+    _mem_locks[key] = now + ttl
+    return True
 
 
 def unlock(key):
-    if not REDIS:
-        _mem_locks.pop(key, None)
-        return
-    try:
-        _redis(["DEL", f"ms:lock:{key}"])
-    except Exception:
-        pass
+    _mem_locks.pop(key, None)
+    if REDIS:
+        try:
+            _redis(["DEL", f"ms:lock:{key}"])
+        except Exception:
+            pass
 
 
 def rate_ok(ip, limit=30):
-    """الحد الأقصى للطلبات في الساعة لكل IP. لو Redis وقع نسمح بدل ما نوقف الموقع."""
     if REDIS:
         try:
             k = f"ms:rl:{ip}"
@@ -181,6 +152,13 @@ def client_ip(request: Request):
     return request.client.host if request.client else "unknown"
 
 
+def public_base(request: Request):
+    if PUBLIC_URL:
+        return PUBLIC_URL
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"https://{host}"
+
+
 # ---------------------------------------------------------------
 # الحماية
 # ---------------------------------------------------------------
@@ -191,9 +169,14 @@ def require_admin(x_admin_key: str = Header("")):
 
 
 # ---------------------------------------------------------------
-# الاتصال بالمورد GalleUnlockers
+# Dhru Fusion Pro Reseller API
+# GET /account | GET /products | POST /order | GET /order?order_uuid=
 # ---------------------------------------------------------------
-def galle(method, path, params=None, body=None, timeout=25):
+class OrderUnknown(Exception):
+    """انقطع الاتصال أو الرد غير مفهوم أثناء إرسال طلب: النتيجة مجهولة، لا تعيد الإرسال."""
+
+
+def fusion(method, path, params=None, body=None, timeout=30, write=False):
     if not GALLE_KEY or not GALLE_URL:
         raise HTTPException(status_code=503, detail="Supplier not configured")
     try:
@@ -206,32 +189,50 @@ def galle(method, path, params=None, body=None, timeout=25):
             timeout=timeout,
         )
     except requests.RequestException:
+        if write:
+            raise OrderUnknown("request failed")
         raise HTTPException(status_code=502, detail="Provider unreachable")
+
     try:
         data = r.json()
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
     except ValueError:
+        if write and (r.status_code < 400 or r.status_code >= 500):
+            raise OrderUnknown("invalid response")
         raise HTTPException(
             status_code=502,
             detail=f"Provider returned HTTP {r.status_code} (not JSON)",
         )
-    if r.status_code >= 400 or (isinstance(data, dict) and data.get("status") == "error"):
-        msg = data.get("message") if isinstance(data, dict) else None
-        raise HTTPException(
-            status_code=r.status_code if r.status_code >= 400 else 400,
-            detail=msg or "Provider error",
+
+    # بعض أخطاء التحقق ترجع HTTP 201 مع status=error، فنفحص الاثنين
+    if r.status_code >= 400 or data.get("status") != "success":
+        code = data.get("code")
+        status = r.status_code if r.status_code >= 400 else (
+            code if isinstance(code, int) and code >= 400 else 400
         )
+        msg = data.get("message") or "Provider error"
+        headers = {}
+        if r.headers.get("Retry-After"):
+            headers["Retry-After"] = r.headers["Retry-After"]
+        if status in (401, 402, 403):
+            log.error("supplier auth/balance error: HTTP %s", status)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Supplier auth/balance error (HTTP {status}): {msg}",
+            )
+        raise HTTPException(status_code=status, detail=msg, headers=headers or None)
     return data
 
 
-def products_raw(product_id=None):
-    key = product_id or "all"
+def products_raw():
     now = time.time()
-    hit = _cache.get(key)
+    hit = _cache.get("all")
     if hit and now - hit[0] < CACHE_TTL:
         return hit[1]
 
     data = None
-    if REDIS and not product_id:
+    if REDIS:
         try:
             raw = _redis(["GET", "ms:products"])
             if raw:
@@ -240,55 +241,33 @@ def products_raw(product_id=None):
             data = None
 
     if data is None:
-        path = f"{GALLE_PRODUCTS_PATH}/{product_id}" if product_id else GALLE_PRODUCTS_PATH
-        data = galle("GET", path)
-        if REDIS and not product_id:
+        data = fusion("GET", "/products")
+        if REDIS:
             try:
                 _redis(["SET", "ms:products", json.dumps(data), "EX", str(CACHE_TTL)])
             except Exception:
                 pass
 
-    _cache[key] = (now, data)
+    _cache["all"] = (now, data)
     return data
 
 
 # ---------------------------------------------------------------
 # تجهيز المنتجات (الأسعار + المدة)
 # ---------------------------------------------------------------
-def _pick(d, *names, default=None):
-    for n in names:
-        for k in (n, n.lower(), n.upper()):
-            if k in d and d[k] not in (None, ""):
-                return d[k]
-    return default
-
-
-def _extract_list(data):
-    if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
-    if isinstance(data, dict):
-        for k in ("data", "products", "services", "result", "SUCCESS"):
-            if k in data:
-                return _extract_list(data[k])
-        out = []
-        for v in data.values():
-            if isinstance(v, (list, dict)):
-                out.extend(_extract_list(v))
-        return out
-    return []
-
-
-def markup_price(cost, category=""):
+def markup_price(cost, cid="", cat_name=""):
     pct = None
-    if category and category in MARKUP_CATEGORIES:
-        pct = float(MARKUP_CATEGORIES[category])
-    else:
+    for k in (cid, cat_name):
+        if k and k in MARKUP_CATEGORIES:
+            pct = float(MARKUP_CATEGORIES[k])
+            break
+    if pct is None:
         for limit, p in MARKUP_TIERS:
             if cost <= float(limit):
                 pct = float(p)
                 break
-        if pct is None:
-            pct = 8.0
+    if pct is None:
+        pct = 8.0
     return round(cost * (1 + pct / 100) + MARKUP_FIXED, 2)
 
 
@@ -302,44 +281,105 @@ def time_text(pid, name, original):
     return original or ""
 
 
-def normalize(p):
-    pid = _pick(p, "id", "serviceid", "product_id")
-    name = _pick(p, "name", "servicename", "title", default="")
-    category = _pick(p, "category", "groupname", "group", default="")
-    try:
-        cost = float(_pick(p, "price", "credit", "cost", default=0))
-    except (TypeError, ValueError):
-        cost = 0.0
-    return {
-        "id": str(pid),
-        "name": name,
-        "category": category,
-        "description": _pick(p, "description", "info", default=""),
-        "cost": cost,
-        "price": markup_price(cost, category),
-        "time": time_text(pid, name, _pick(p, "time", "delivery_time", default="")),
-    }
-
-
 def catalog():
-    items = [normalize(p) for p in _extract_list(products_raw())]
-    return [i for i in items if i["id"] and i["id"] != "None"]
+    """يرجع (العملة، الأقسام، المنتجات) من رد المورد: data.products مفتاحها رقم المنتج."""
+    raw = products_raw()
+    d = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+    cats_raw = d.get("categories") if isinstance(d.get("categories"), dict) else {}
+    prods_raw = d.get("products") if isinstance(d.get("products"), dict) else {}
+
+    categories = {}
+    for cid, c in cats_raw.items():
+        if isinstance(c, dict):
+            categories[str(cid)] = {"id": str(cid), "name": c.get("name", ""), "type": c.get("type", "")}
+
+    items = []
+    for pid, p in prods_raw.items():
+        if not isinstance(p, dict):
+            continue
+        cid = str(p.get("cid") or ((p.get("cids") or [""])[0]))
+        cat_name = categories.get(cid, {}).get("name", "")
+        try:
+            cost = float(p.get("price") or 0)
+        except (TypeError, ValueError):
+            cost = 0.0
+        fields = p.get("fields") if isinstance(p.get("fields"), list) else []
+        items.append(
+            {
+                "id": str(pid),
+                "name": p.get("name", ""),
+                "type": p.get("type", ""),
+                "category_id": cid,
+                "category": cat_name,
+                "cost": cost,
+                "price": markup_price(cost, cid, cat_name),
+                "time": time_text(pid, p.get("name", ""), p.get("time", "")),
+                "fields": fields,
+            }
+        )
+    return d.get("currency", "USD"), list(categories.values()), items
+
+
+def find_product(pid):
+    _, _, items = catalog()
+    return next((i for i in items if i["id"] == str(pid)), None)
 
 
 # ---------------------------------------------------------------
-# إشعارات تيليجرام
+# تيليجرام
 # ---------------------------------------------------------------
 def notify(text):
     if not (TG_TOKEN and TG_CHAT):
-        return
+        return False
     try:
-        requests.post(
+        r = requests.post(
             f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-            json={"chat_id": TG_CHAT, "text": text},
-            timeout=6,
+            json={"chat_id": TG_CHAT, "text": text[:4000]},
+            timeout=8,
         )
-    except Exception as e:
-        log.warning("telegram failed: %s", e)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------
+# رمز الطلب الموقّع (بدل تخزين الطلبات)
+# ---------------------------------------------------------------
+def _sign(data):
+    return hmac.new(ADMIN_SECRET.encode(), data.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def make_token(payload):
+    raw = base64.urlsafe_b64encode(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    ).decode().rstrip("=")
+    return f"{raw}.{_sign(raw)}"
+
+
+def read_token(token):
+    token = (token or "").strip()
+    if not ADMIN_SECRET or "." not in token:
+        raise HTTPException(status_code=400, detail="Bad token")
+    raw, sig = token.rsplit(".", 1)
+    if not hmac.compare_digest(sig, _sign(raw)):
+        raise HTTPException(status_code=400, detail="Bad token")
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad token")
+    if time.time() - int(payload.get("t", 0)) > 7 * 86400:
+        raise HTTPException(status_code=400, detail="Token expired")
+    return payload
+
+
+def token_hash(token):
+    return hashlib.sha1(token.strip().encode()).hexdigest()
+
+
+def first_item(d):
+    while isinstance(d, list) and d:
+        d = d[0]
+    return d if isinstance(d, dict) else {}
 
 
 # ---------------------------------------------------------------
@@ -348,12 +388,18 @@ def notify(text):
 router = APIRouter()
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+UUID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
 
 class OrderIn(BaseModel):
     product_id: str = Field(..., min_length=1, max_length=64)
     email: str = Field(..., min_length=5, max_length=120)
-    quantity: int = Field(1, ge=1, le=1)
+    quantity: int = Field(1, ge=1, le=10)
+    extra: dict = Field(default_factory=dict)
+
+
+class PlaceIn(BaseModel):
+    token: str = Field(..., min_length=10, max_length=5000)
 
 
 @router.get("/health")
@@ -363,18 +409,48 @@ def health():
         "redis": REDIS,
         "supplier": bool(GALLE_URL and GALLE_KEY),
         "telegram": bool(TG_TOKEN and TG_CHAT),
+        "admin": bool(ADMIN_SECRET),
     }
 
 
 @router.get("/products")
 def list_products():
-    items = catalog()
-    # لا نكشف سعر التكلفة للزوار
-    return [{k: v for k, v in i.items() if k != "cost"} for i in items]
+    currency, categories, items = catalog()
+    return {
+        "currency": currency,
+        "categories": categories,
+        "products": [{k: v for k, v in i.items() if k != "cost"} for i in items],
+    }
+
+
+def build_fields(product, email, extra):
+    """يبني حقول المورد من schema المنتج (الإيميل يُعبّأ تلقائيًا)."""
+    lowered = {str(k).lower(): v for k, v in (extra or {}).items()}
+    out = {}
+    for f in product.get("fields") or []:
+        if not isinstance(f, dict) or not f.get("name"):
+            continue
+        name = str(f["name"])
+        ftype = str(f.get("type") or "").lower()
+        if ftype == "email" or name.lower() == "email":
+            val = email
+        else:
+            val = lowered.get(name.lower())
+            val = str(val).strip() if val is not None else ""
+        if f.get("required") and not val:
+            raise HTTPException(status_code=422, detail=f"Missing field: {name}")
+        if val:
+            if len(val) > 200:
+                raise HTTPException(status_code=422, detail=f"Field too long: {name}")
+            out[name] = val
+    return out
 
 
 @router.post("/order")
 def create_order(body: OrderIn, request: Request):
+    """طلب الزبون: يُسجَّل ويصلك على تيليجرام. التنفيذ عند المورد بعد تأكيد الدفع من /admin."""
+    if not (ADMIN_SECRET and TG_TOKEN and TG_CHAT):
+        raise HTTPException(status_code=503, detail="Server not configured")
     ip = client_ip(request)
     if not rate_ok(ip):
         raise HTTPException(status_code=429, detail="Too many requests, try later")
@@ -383,84 +459,179 @@ def create_order(body: OrderIn, request: Request):
     if not EMAIL_RE.match(email):
         raise HTTPException(status_code=422, detail="Invalid email")
 
-    product = next((p for p in catalog() if p["id"] == body.product_id), None)
+    product = find_product(body.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # منع التكرار (نفس الإيميل ونفس المنتج خلال دقيقة)
+    fields = build_fields(product, email, body.extra)
+
     dedupe = hashlib.sha1(f"{email}|{product['id']}".encode()).hexdigest()
-    if not lock(dedupe, 60):
+    if not lock(f"new:{dedupe}", 60):
         raise HTTPException(status_code=409, detail="Duplicate order, wait a minute")
 
-    ref = uuid.uuid4().hex[:12]
+    payload = {
+        "p": product["id"],
+        "n": product["name"],
+        "f": fields,
+        "e": email,
+        "q": body.quantity,
+        "pr": product["price"],
+        "t": int(time.time()),
+    }
+    token = make_token(payload)
+    code = "MS-" + token_hash(token)[:8].upper()
+    total = round(product["price"] * body.quantity, 2)
+
+    sent = notify(
+        f"طلب جديد {code}\n"
+        f"الخدمة: {product['name']}\n"
+        f"الإيميل: {email}\n"
+        f"الكمية: {body.quantity}\n"
+        f"السعر: ${total}\n\n"
+        f"بعد تأكيد الدفع الصق الرمز في /admin:\n{token}"
+    )
+    if not sent:
+        unlock(f"new:{dedupe}")
+        raise HTTPException(status_code=502, detail="Could not deliver the order, contact us on WhatsApp")
+
+    return {"ok": True, "ref": code, "price": total}
+
+
+# ------------------ الأدمن ------------------
+@router.post("/admin/place", dependencies=[Depends(require_admin)])
+def admin_place(body: PlaceIn, request: Request):
+    """ينفّذ الطلب عند المورد (يخصم من رصيدك). استخدمه بعد تأكيد الدفع فقط."""
+    payload = read_token(body.token)
+    product = find_product(payload.get("p"))
+    if not product:
+        raise HTTPException(status_code=404, detail="Product no longer available")
+
+    h = token_hash(body.token)
+    ref_id = "ms-" + h[:24]
+    if not lock(f"place:{ref_id}", 600):
+        raise HTTPException(status_code=409, detail="Already submitted, check the supplier panel")
+
+    order_obj = dict(payload.get("f") or {})
+    order_obj.update(
+        {
+            "feedback_url": f"{public_base(request)}/callback",
+            "reference_id": ref_id,
+            "Quantity": int(payload.get("q") or 1),
+        }
+    )
+    pid = product["id"]
+    req_body = [{"product_id": int(pid) if pid.isdigit() else pid, "fields": [order_obj]}]
+
     try:
-        # عدّل المسار/الحقول هنا حسب توثيق المورد لو مختلفة
-        supplier = galle(
-            "POST",
-            GALLE_ORDER_PATH,
-            body={"product_id": product["id"], "email": email, "reference": ref},
+        resp = fusion("POST", "/order", body=req_body, timeout=ORDER_TIMEOUT, write=True)
+    except OrderUnknown:
+        notify(f"نتيجة غير معروفة للطلب {ref_id}. لا تعد الإرسال، راجع لوحة المورد بهذا المرجع.")
+        return JSONResponse(
+            status_code=202,
+            content={
+                "ok": False,
+                "unknown": True,
+                "reference_id": ref_id,
+                "detail": "Outcome unknown. Do NOT retry. Check the supplier panel with this reference_id.",
+            },
         )
     except HTTPException:
-        unlock(dedupe)
+        unlock(f"place:{ref_id}")
         raise
 
-    order = {
-        "ref": ref,
-        "product_id": product["id"],
-        "product": product["name"],
-        "email": email,
-        "price": product["price"],
-        "cost": product["cost"],
-        "status": "pending",
-        "ip": ip,
-        "created": int(time.time()),
-        "supplier": supplier,
-    }
-    try:
-        order_set(order)
-    except HTTPException:
-        log.error("order %s sent to supplier but storage failed", ref)
+    item = first_item(resp.get("data"))
+    if item.get("status") == "error":
+        unlock(f"place:{ref_id}")
+        raise HTTPException(status_code=400, detail=item.get("message") or item.get("replay") or "Rejected")
 
-    notify(f"طلب جديد {ref}\n{product['name']}\n{email}\n${product['price']}")
-    return {"ok": True, "ref": ref, "price": product["price"]}
-
-
-@router.get("/order/{ref}")
-def order_status(ref: str):
-    o = order_get(ref)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
-    return {k: o.get(k) for k in ("ref", "product", "status", "price", "created")}
-
-
-@router.get("/admin/orders", dependencies=[Depends(require_admin)])
-def admin_orders():
-    orders = order_all()
-    orders.sort(key=lambda o: o.get("created", 0), reverse=True)
-    return orders
-
-
-@router.get("/debug/raw")
-def debug_raw(k: str = "", path: str = ""):
-    """تشخيص مؤقت: افتحه هكذا /debug/raw?k=ADMIN_SECRET&path=/products
-    احذفه بعد ما تنتهي من الضبط."""
-    if not ADMIN_SECRET or not hmac.compare_digest(k.encode(), ADMIN_SECRET.encode()):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    p = path or GALLE_PRODUCTS_PATH
-    if not p.startswith("/"):
-        p = "/" + p
-    try:
-        data = galle("GET", p)
-    except HTTPException as e:
-        return {"path": p, "error": e.status_code, "detail": e.detail}
-    text = json.dumps(data, ensure_ascii=False)
+    notify(f"أُرسل للمورد: {ref_id}\norder_uuid: {item.get('order_uuid')}")
     return {
-        "path": p,
-        "type": type(data).__name__,
-        "keys": list(data.keys())[:20] if isinstance(data, dict) else None,
-        "length": len(text),
-        "sample": text[:1200],
+        "ok": True,
+        "reference_id": ref_id,
+        "order_uuid": item.get("order_uuid"),
+        "amount": item.get("amount"),
+        "currency": item.get("currency_code"),
+        "note": item.get("note"),
     }
+
+
+@router.get("/admin/status", dependencies=[Depends(require_admin)])
+def admin_status(uuid: str = ""):
+    if not UUID_RE.match(uuid):
+        raise HTTPException(status_code=422, detail="Invalid order_uuid")
+    data = fusion("GET", "/order", params={"order_uuid": uuid})
+    return data.get("data")
+
+
+@router.get("/admin/account", dependencies=[Depends(require_admin)])
+def admin_account():
+    d = (fusion("GET", "/account").get("data") or {})
+    return {"currency": d.get("currency"), "balance": d.get("balance"), "name": d.get("name")}
+
+
+# ------------------ إشعار المورد (feedback_url) ------------------
+@router.post("/callback")
+def callback(payload: dict):
+    """المورد يرسل هنا عند success/rejected. لا يوجد توقيع، فنتحقق من الحالة بـ GET /order قبل أي إجراء."""
+    order_id = str(payload.get("order_id") or "")
+    ref = str(payload.get("reference_id") or "")[:60]
+    if not UUID_RE.match(order_id):
+        return {"ok": False}
+    try:
+        data = fusion("GET", "/order", params={"order_uuid": order_id})
+    except HTTPException:
+        return {"ok": False}
+    d = data.get("data") if isinstance(data.get("data"), dict) else {}
+    status = d.get("status")
+    if status in ("success", "rejected") and lock(f"cb:{order_id}:{status}", 3600):
+        notify(f"تحديث الطلب {ref}\nالحالة: {status}\nالرد: {str(d.get('replay') or '')[:600]}")
+    return {"ok": True}
+
+
+# ------------------ صفحة بسيطة للتنفيذ ------------------
+ADMIN_HTML = r"""<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mustafa Soft Admin</title>
+<style>
+body{font-family:sans-serif;max-width:640px;margin:16px auto;padding:0 12px}
+input,textarea,button{width:100%;box-sizing:border-box;padding:10px;margin:6px 0;font-size:16px}
+button{background:#111;color:#fff;border:0;border-radius:8px}
+pre{white-space:pre-wrap;word-break:break-all;background:#f3f3f3;padding:10px;border-radius:8px}
+</style></head><body>
+<h3>تنفيذ الطلبات</h3>
+<input id="k" type="password" placeholder="Admin key">
+<button onclick="call('GET','account')">الرصيد</button>
+<textarea id="t" rows="4" placeholder="الصق رمز الطلب من تيليجرام"></textarea>
+<button onclick="place()">تنفيذ عند المورد (بعد تأكيد الدفع)</button>
+<input id="u" placeholder="order_uuid">
+<button onclick="status()">حالة طلب</button>
+<pre id="o"></pre>
+<script>
+const base=location.pathname.replace(/\/+$/,'');
+async function call(m,p,b){
+  const o=document.getElementById('o');o.textContent='...';
+  try{
+    const r=await fetch(base+'/'+p,{method:m,headers:{'Content-Type':'application/json','X-Admin-Key':document.getElementById('k').value.trim()},body:b?JSON.stringify(b):undefined});
+    const j=await r.json().catch(()=>({}));
+    o.textContent=r.status+'\n'+JSON.stringify(j,null,2);
+  }catch(e){o.textContent='خطأ اتصال';}
+}
+function place(){
+  const t=document.getElementById('t').value.trim();
+  if(!t)return;
+  if(!confirm('تنفيذ الطلب وخصم الرصيد؟'))return;
+  call('POST','place',{token:t});
+}
+function status(){
+  call('GET','status?uuid='+encodeURIComponent(document.getElementById('u').value.trim()));
+}
+</script></body></html>"""
+
+
+@router.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return HTMLResponse(ADMIN_HTML)
 
 
 app.include_router(router)
