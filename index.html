@@ -119,7 +119,7 @@ const $=id=>document.getElementById(id);
 let ALL=[], VIEW=[], shown=0;
 $('waTop').href=$('waFoot').href='https://wa.me/'+WA;
 
-function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',1800)}
+function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-copy]');if(!b)return;
   const t=b.dataset.copy,ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
   try{document.execCommand('copy');toast('تم النسخ')}catch(x){toast('انسخ يدويًا')}ta.remove()});
@@ -167,13 +167,63 @@ function card(i){
   el.innerHTML=`<h4>${esc(i.name)}</h4><div class="cat">${esc(i.category||'')}</div>
   <div class="row"><span class="price">$${Number(i.price).toFixed(2)}</span><span class="time">للوحدة | <bdi>${esc(i.time||'')}</bdi></span></div>`;
   const vals={};
+  
   inputs.forEach((f,k)=>{
     const id=`f${i.id}_${k}`,lab=document.createElement('label');lab.htmlFor=id;lab.textContent=f.name+(f.required?' *':'');
-    const inp=document.createElement('input');inp.id=id;inp.autocomplete='off';
-    inp.placeholder=(f.type==='imei'||/imei/i.test(f.name))?'15 رقمًا':f.name;
-    inp.oninput=()=>{vals[k]=inp.value.trim();err.textContent=''};
-    el.append(lab,inp);
+    
+    // التعديل الجديد: إضافة زر الفحص بجانب حقل IMEI
+    if(f.type==='imei'||/imei/i.test(f.name)) {
+        const rowDiv = document.createElement('div');
+        rowDiv.style.display = 'flex';
+        rowDiv.style.gap = '8px';
+        
+        const inp=document.createElement('input');inp.id=id;inp.autocomplete='off';
+        inp.placeholder='15 رقمًا';
+        inp.oninput=()=>{vals[k]=inp.value.trim();err.textContent=''};
+        
+        const checkBtn = document.createElement('button');
+        checkBtn.className = 'btn light';
+        checkBtn.style.height = '42px';
+        checkBtn.style.whiteSpace = 'nowrap';
+        checkBtn.textContent = 'فحص';
+        checkBtn.type = 'button';
+        checkBtn.onclick = async (e) => {
+            e.preventDefault();
+            if(!/^\d{15}$/.test(inp.value.trim())) { toast('أدخل 15 رقم صحيح'); return; }
+            checkBtn.textContent = '...';
+            checkBtn.disabled = true;
+            try {
+                // الاتصال بملف بايثون الذي أنشأناه في Vercel
+                const res = await fetch(API + '/api/check-imei', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ imei: inp.value.trim(), service_id: i.id })
+                });
+                const data = await res.json();
+                
+                if (data.error) {
+                    toast('خطأ: ' + (data.error.message || data.error));
+                } else {
+                    toast('تم الفحص بنجاح! راجع الكونسول للتفاصيل');
+                    console.log(data); // ستجد النتيجة كاملة هنا
+                }
+            } catch(e) {
+                toast('خطأ في الاتصال بالخادم');
+            }
+            checkBtn.textContent = 'فحص';
+            checkBtn.disabled = false;
+        };
+        
+        rowDiv.append(inp, checkBtn);
+        el.append(lab, rowDiv);
+    } else {
+        const inp=document.createElement('input');inp.id=id;inp.autocomplete='off';
+        inp.placeholder=f.name;
+        inp.oninput=()=>{vals[k]=inp.value.trim();err.textContent=''};
+        el.append(lab,inp);
+    }
   });
+
   let qin=null;
   if(qf&&qmax>1){
     const lab=document.createElement('label');lab.textContent=`الكمية (${qmin} إلى ${qmax})`;lab.htmlFor=`q${i.id}`;
@@ -196,6 +246,7 @@ function card(i){
   function qty(){return qin?parseInt(qin.value)||0:1}
   function upd(){tot.textContent='الإجمالي: $'+(qty()*i.price).toFixed(2)}
   upd();
+  
   b.onclick=async()=>{
     const n=qty();
     if(risky&&!chk.checked){err.style.color='';err.textContent='يرجى الموافقة على التنبيه أولًا';return}
@@ -222,6 +273,7 @@ function card(i){
   };
   el.append(tot,err,b);return el;
 }
+
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 let dip=null;const ib=$('install');
 const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
