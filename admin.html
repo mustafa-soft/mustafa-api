@@ -2,24 +2,88 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>لوحة تحكم Mustafa Soft</title>
+<style>
+body{font-family:system-ui;background:#f6f6f6;margin:0;padding:16px}
+.box{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px}
+input,button{padding:10px;border-radius:8px;border:1px solid #ddd;width:100%;box-sizing:border-box;margin-top:8px}
+button{background:#111;color:#fff;cursor:pointer}
+table{width:100%;border-collapse:collapse}
+td,th{border-bottom:1px solid #eee;padding:8px;text-align:right;font-size:13px}
+.hidden{display:none}
+</style>
 </head>
 <body>
 <h1>لوحة تحكم Mustafa Soft</h1>
-<p id="status">جاري الاتصال بالـ API...</p>
-<div id="orders"></div>
+
+<div class="box" id="loginBox">
+<h3>دخول الأدمن</h3>
+<p>اكتب كلمة سر الأدمن:</p>
+<input type="password" id="adminPass" placeholder="كلمة سر الأدمن">
+<button onclick="login()">دخول</button>
+<p id="loginMsg" style="color:red"></p>
+<p style="font-size:12px;color:#888">كلمة السر الافتراضية للتجربة: <b>123456</b> - غيّرها من الكود بعدين</p>
+</div>
+
+<div id="panel" class="hidden">
+<div class="box"><b>حالة الـ API:</b> <span id="status">جاري...</span></div>
+<div class="box"><b>الطلبات:</b><div id="orders">جاري تحميل الطلبات...</div></div>
+<div class="box"><b>الكتالوج:</b><div id="catalog">جاري تحميل الخدمات...</div></div>
+<button onclick="logout()">تسجيل خروج</button>
+</div>
+
 <script>
 const API_URL = 'https://mustafa-api-mu.vercel.app';
-async function load() {
-  try {
+const ADMIN_PASSWORD = '123456';
+
+function login(){
+  const p = document.getElementById('adminPass').value;
+  if(p === ADMIN_PASSWORD){
+    localStorage.setItem('mustafa_admin','1');
+    showPanel();
+  } else {
+    document.getElementById('loginMsg').innerText = 'كلمة السر غلط';
+  }
+}
+function logout(){
+  localStorage.removeItem('mustafa_admin');
+  location.reload();
+}
+function showPanel(){
+  document.getElementById('loginBox').classList.add('hidden');
+  document.getElementById('panel').classList.remove('hidden');
+  loadStatus();
+  loadOrders();
+  loadCatalog();
+}
+async function loadStatus(){
+  try{
     const r = await fetch(API_URL + '/health');
     const d = await r.json();
     document.getElementById('status').innerText = 'متصل بالـ API ✅ : ' + JSON.stringify(d);
-  } catch(e) {
-    document.getElementById('status').innerText = 'API unavailable ❌ : ' + e;
-  }
+  }catch(e){ document.getElementById('status').innerText = 'API unavailable ❌'; }
 }
-load();
+async function loadOrders(){
+  try{
+    const r = await fetch(API_URL + '/admin/status', {headers:{'x-admin-key': document.getElementById('adminPass').value || ADMIN_PASSWORD}});
+    const d = await r.json();
+    document.getElementById('orders').innerHTML = '<pre style="white-space:pre-wrap">' + JSON.stringify(d, null, 2) + '</pre>';
+  }catch(e){ document.getElementById('orders').innerText = 'ما قدرنا نجيب الطلبات: ' + e; }
+}
+async function loadCatalog(){
+  try{
+    const r = await fetch(API_URL + '/catalog?limit=20');
+    const d = await r.json();
+    let html = '<p>إجمالي الخدمات: ' + (d.total || d.items?.length || 0) + '</p><table><tr><th>الخدمة</th></tr>';
+    (d.items || []).slice(0,20).forEach(it=>{
+      html += '<tr><td>' + (it.name || it.title || JSON.stringify(it)) + '</td></tr>';
+    });
+    html += '</table>';
+    document.getElementById('catalog').innerHTML = html;
+  }catch(e){ document.getElementById('catalog').innerText = 'ما قدرنا نجيب الكتالوج'; }
+}
+if(localStorage.getItem('mustafa_admin') === '1'){ showPanel(); }
 </script>
 </body>
 </html>
