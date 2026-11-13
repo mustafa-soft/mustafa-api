@@ -2,237 +2,89 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0F172A">
-<link rel="manifest" href="/manifest.json">
-<link rel="icon" href="/192x192_.png">
-<link rel="apple-touch-icon" href="/192x192_.png">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>Mustafa Soft | متجر أدوات وخدمات الهواتف</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة تحكم Mustafa Soft</title>
 <style>
-:root{--bg:#F8FAFC;--card:#fff;--ink:#0F172A;--mute:#64748B;--line:#E2E8F0;--accent:#2563EB;--ok:#166534;--okbg:#DCFCE7;--err:#B91C1C}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;line-height:1.6}
-.wrap{max-width:1120px;margin:0 auto;padding:0 16px}
-header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
-header .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
-.brand{display:flex;align-items:center;gap:10px;font-weight:700}
-.logo{width:34px;height:34px;border-radius:9px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:13px}
-.pill{font-size:11px;font-weight:600;padding:2px 10px;border-radius:99px;background:#F1F5F9;color:var(--mute)}
-.pill.on{background:var(--okbg);color:var(--ok)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:42px;padding:0 18px;border:0;border-radius:11px;background:var(--ink);color:#fff;font:inherit;font-weight:600;font-size:14px;cursor:pointer;text-decoration:none}
-[hidden]{display:none!important}
-.btn:disabled{opacity:.55;cursor:default}
-.btn.light{background:#F1F5F9;color:var(--ink)}
-h1{font-size:26px;margin:28px 0 4px;letter-spacing:-.01em}
-.sub{color:var(--mute);font-size:14px;margin:0 0 20px}
-.pay{display:grid;gap:12px;grid-template-columns:1fr;margin-bottom:28px}
-.box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
-.box h3{margin:0 0 8px;font-size:15px}
-.num{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:15px;font-weight:600;word-break:break-all;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0}
-.note{font-size:12.5px;color:var(--mute);margin:8px 0 0}
-.tools{display:grid;gap:10px;grid-template-columns:1fr;margin-bottom:16px}
-input,select{width:100%;height:42px;border:1px solid var(--line);border-radius:11px;background:#fff;padding:0 12px;font:inherit;font-size:14px;color:var(--ink)}
-input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.count{font-size:13px;color:var(--mute);margin:0 0 12px}
-.grid{display:grid;gap:14px;grid-template-columns:1fr}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px}
-.card h4{margin:0;font-size:14.5px;line-height:1.5;direction:auto}
-.cat{font-size:12px;color:var(--mute)}
-.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.price{font-size:20px;font-weight:700;direction:ltr}
-.time{font-size:12px;color:var(--mute)}
-.card label{font-size:12px;font-weight:600;margin-top:4px}
-.card input{direction:ltr;text-align:left}
-.err{color:var(--err);font-size:12px;min-height:0}
-.total{font-size:13px;color:var(--mute)}
-.warn{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:10px;padding:10px;font-size:12.5px}
-.ack{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:500}
-.ack input{width:auto;height:auto;margin-top:5px}
-.install{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#0F172A;color:#fff;padding:10px 16px;font-size:14px}
-.install span{flex:1;min-width:180px}
-.install .btn{height:36px;padding:0 14px}
-.state{padding:28px 16px;text-align:center;color:var(--mute);background:var(--card);border:1px dashed var(--line);border-radius:14px}
-.more{display:block;margin:20px auto}
-footer{margin-top:40px;border-top:1px solid var(--line);background:#fff;padding:24px 0 calc(24px + env(safe-area-inset-bottom))}
-footer p{margin:4px 0;font-size:13px;color:var(--mute)}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:99px;font-size:13px;display:none;z-index:20}
-@media(min-width:640px){.pay,.tools{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr 1fr}}
-@media(min-width:1000px){.grid{grid-template-columns:repeat(3,1fr)}.tools{grid-template-columns:2fr 1fr 1fr}}
-@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+body{font-family:system-ui;background:#f6f6f6;margin:0;padding:16px}
+.box{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px}
+input,button{padding:10px;border-radius:8px;border:1px solid #ddd;width:100%;box-sizing:border-box;margin-top:8px}
+button{background:#111;color:#fff;cursor:pointer}
+table{width:100%;border-collapse:collapse}
+td,th{border-bottom:1px solid #eee;padding:8px;text-align:right;font-size:13px}
+.hidden{display:none}
 </style>
 </head>
 <body>
-<header><div class="wrap">
-  <div class="brand"><div class="logo">MS</div><span>Mustafa Soft</span><span id="status" class="pill">جاري الاتصال</span></div>
-  <a class="btn" id="waTop" target="_blank" rel="noopener">واتساب</a>
-</div></header>
-<div id="install" class="install" hidden><span id="installTxt">ثبّت تطبيق Mustafa Soft على هاتفك</span><button class="btn" id="installBtn" style="background:#fff;color:#0F172A">تثبيت</button><button class="btn light" id="installX">لاحقًا</button></div>
+<h1>لوحة تحكم Mustafa Soft</h1>
 
-<main class="wrap">
-  <h1>خدمات وأدوات الهواتف</h1>
-  <p class="sub">اختر الخدمة، أدخل بياناتك، ثم أرسل الطلب عبر واتساب بعد الدفع.</p>
+<div class="box" id="loginBox">
+<h3>دخول الأدمن</h3>
+<p>اكتب كلمة سر الأدمن:</p>
+<input type="password" id="adminPass" placeholder="كلمة سر الأدمن">
+<button onclick="login()">دخول</button>
+<p id="loginMsg" style="color:red"></p>
+<p style="font-size:12px;color:#888">كلمة السر: <b>123456</b></p>
+</div>
 
-  <section class="pay" aria-label="طرق الدفع">
-    <div class="box">
-      <h3>الدفع عبر بنكك</h3>
-      <div class="num" id="bankNum">5769269</div>
-      <div>مصطفى فتح الرحمن يوسف</div>
-      <button class="btn light" style="margin-top:10px" data-copy="5769269">نسخ رقم الحساب</button>
-    </div>
-    <div class="box">
-      <h3>الدفع عبر USDT (شبكة TRC20)</h3>
-      <div class="num" id="usdtNum">TE6q6QLYrpHkDFYppTDa1m97kTfCLou8PD</div>
-      <button class="btn light" data-copy="TE6q6QLYrpHkDFYppTDa1m97kTfCLou8PD">نسخ العنوان</button>
-      <p class="note">أرسل على شبكة TRON (TRC20) فقط.</p>
-    </div>
-  </section>
-
-  <h2 style="font-size:20px;margin:0 0 12px">الخدمات</h2>
-  <div class="tools">
-    <input id="q" type="search" placeholder="ابحث عن خدمة، مثل Samsung" aria-label="بحث">
-    <select id="cat" aria-label="القسم"><option value="">كل الأقسام</option></select>
-    <select id="typ" aria-label="النوع"><option value="">كل الأنواع</option><option value="imei">IMEI</option><option value="server">سيرفر</option></select>
-  </div>
-  <p class="count" id="count"></p>
-  <div id="list" class="grid"></div>
-  <div id="state" class="state">جاري تحميل الخدمات. إذا كان السيرفر نائمًا فقد يستغرق ذلك حتى دقيقة.</div>
-  <button id="more" class="btn light more" hidden>عرض المزيد</button>
-</main>
-
-<footer><div class="wrap">
-  <strong>Mustafa Soft</strong>
-  <p>بعد الدفع أرسل إشعار التحويل عبر واتساب. يبدأ التنفيذ بعد تأكيد الدفع.</p>
-  <p>واتساب: <a id="waFoot" target="_blank" rel="noopener" style="text-decoration:underline">0900287738</a></p>
-</div></footer>
-<div class="toast" id="toast" role="status"></div>
+<div id="panel" class="hidden">
+<div class="box"><b>حالة الـ API:</b> <span id="status">جاري...</span></div>
+<div class="box"><b>الطلبات:</b><div id="orders">جاري تحميل الطلبات...</div></div>
+<div class="box"><b>الكتالوج:</b><div id="catalog">جاري تحميل الخدمات...</div></div>
+<button onclick="logout()">تسجيل خروج</button>
+</div>
 
 <script>
-// عنوان الـAPI: هنا الخدمات بتيجي من mustafa-api
-const API='https://mustafa-api-mu.vercel.app', WA='249900287738', PAGE=24;
-const ONLY='';
-// الخدمات الأغلى من هذا السعر، أو اسمها فيه FRP، بتطلب موافقة على شروط عدم الاسترداد
-const RISKY_PRICE=15;
-const $=id=>document.getElementById(id);
-let ALL=[], VIEW=[], shown=0;
-$('waTop').href=$('waFoot').href='https://wa.me/'+WA;
+const API_URL = 'https://mustafa-api-mu.vercel.app';
+const ADMIN_PASSWORD = '123456';
+const API_SECRET = 'حط_هنا_قيمة_ADMIN_SECRET_من_Vercel';
 
-function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',1800)}
-document.addEventListener('click',e=>{const b=e.target.closest('[data-copy]');if(!b)return;
-  const t=b.dataset.copy,ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
-  try{document.execCommand('copy');toast('تم النسخ')}catch(x){toast('انسخ يدويًا')}ta.remove()});
-
-async function load(){
+function login(){
+  const p = document.getElementById('adminPass').value;
+  if(p === ADMIN_PASSWORD){
+    localStorage.setItem('mustafa_admin','1');
+    showPanel();
+  } else {
+    document.getElementById('loginMsg').innerText = 'كلمة السر غلط';
+  }
+}
+function logout(){
+  localStorage.removeItem('mustafa_admin');
+  location.reload();
+}
+function showPanel(){
+  document.getElementById('loginBox').classList.add('hidden');
+  document.getElementById('panel').classList.remove('hidden');
+  loadStatus();
+  loadOrders();
+  loadCatalog();
+}
+async function loadStatus(){
   try{
-    let off=0,total=1;
-    while(off<total){
-      const r=await fetch(`${API}/catalog?limit=200&offset=${off}${ONLY?'&q='+encodeURIComponent(ONLY):''}`);
-      if(!r.ok)throw new Error(r.status);
-      const d=await r.json();total=d.total;ALL=ALL.concat(d.items);off+=200;
-    }
-    $('status').textContent='متصل';$('status').className='pill on';
-    const cats=[...new Map(ALL.filter(i=>i.category).map(i=>[i.category_id,i.category])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
-    $('cat').innerHTML='<option value="">كل الأقسام</option>'+cats.map(([id,n])=>`<option value="${esc(id)}">${esc(n)}</option>`).join('');
-    $('state').hidden=true;apply();
-  }catch(e){
-    $('status').textContent='غير متصل';
-    $('state').innerHTML='تعذر تحميل الخدمات. <button class="btn light" id="retry" style="margin-top:8px">إعادة المحاولة</button>';
-    $('retry').onclick=()=>{$('state').textContent='جاري التحميل…';ALL=[];load()};
-  }
+    const r = await fetch(API_URL + '/health');
+    const d = await r.json();
+    document.getElementById('status').innerText = 'متصل بالـ API ✅ : ' + JSON.stringify(d);
+  }catch(e){ document.getElementById('status').innerText = 'API unavailable ❌'; }
 }
-function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-
-function apply(){
-  const q=$('q').value.trim().toLowerCase(),c=$('cat').value,t=$('typ').value;
-  VIEW=ALL.filter(i=>(!q||(i.name||'').toLowerCase().includes(q))&&(!c||i.category_id===c)&&(!t||i.type===t));
-  $('list').innerHTML='';shown=0;
-  $('count').textContent=VIEW.length?`${VIEW.length} خدمة`:'';
-  if(!VIEW.length){$('state').hidden=false;$('state').textContent='لا توجد خدمات مطابقة. جرّب كلمة بحث أخرى.'}else $('state').hidden=true;
-  more();
+async function loadOrders(){
+  try{
+    const r = await fetch(API_URL + '/admin/status', {headers:{'x-admin-key': API_SECRET}});
+    const d = await r.json();
+    document.getElementById('orders').innerHTML = '<pre style="white-space:pre-wrap">' + JSON.stringify(d, null, 2) + '</pre>';
+  }catch(e){ document.getElementById('orders').innerText = 'ما قدرنا نجيب الطلبات: ' + e; }
 }
-function more(){
-  VIEW.slice(shown,shown+PAGE).forEach(i=>$('list').appendChild(card(i)));
-  shown+=PAGE;$('more').hidden=shown>=VIEW.length;
+async function loadCatalog(){
+  try{
+    const r = await fetch(API_URL + '/catalog?limit=20');
+    const d = await r.json();
+    let html = '<p>إجمالي الخدمات: ' + (d.total || d.items?.length || 0) + '</p><table><tr><th>الخدمة</th></tr>';
+    (d.items || []).slice(0,20).forEach(it=>{
+      html += '<tr><td>' + (it.name || it.title || JSON.stringify(it)) + '</td></tr>';
+    });
+    html += '</table>';
+    document.getElementById('catalog').innerHTML = html;
+  }catch(e){ document.getElementById('catalog').innerText = 'ما قدرنا نجيب الكتالوج'; }
 }
-$('more').onclick=more;
-let tm;$('q').oninput=()=>{clearTimeout(tm);tm=setTimeout(apply,200)};$('cat').onchange=$('typ').onchange=apply;
-
-function card(i){
-  const el=document.createElement('article');el.className='card';
-  const qf=(i.fields||[]).find(f=>(f.type||'').toLowerCase()==='quantity');
-  const inputs=(i.fields||[]).filter(f=>f!==qf);
-  const qmin=qf?Math.max(1,parseInt(qf.min)||1):1, qmax=qf?(parseInt(qf.max)||100000):1;
-  el.innerHTML=`<h4>${esc(i.name)}</h4><div class="cat">${esc(i.category||'')}</div>
-  <div class="row"><span class="price">$${Number(i.price).toFixed(2)}</span><span class="time">للوحدة | <bdi>${esc(i.time||'')}</bdi></span></div>`;
-  const vals={};
-  inputs.forEach((f,k)=>{
-    const id=`f${i.id}_${k}`,lab=document.createElement('label');lab.htmlFor=id;lab.textContent=f.name+(f.required?' *':'');
-    const inp=document.createElement('input');inp.id=id;inp.autocomplete='off';
-    inp.placeholder=(f.type==='imei'||/imei/i.test(f.name))?'15 رقمًا':f.name;
-    inp.oninput=()=>{vals[k]=inp.value.trim();err.textContent=''};
-    el.append(lab,inp);
-  });
-  let qin=null;
-  if(qf&&qmax>1){
-    const lab=document.createElement('label');lab.textContent=`الكمية (${qmin} إلى ${qmax})`;lab.htmlFor=`q${i.id}`;
-    qin=document.createElement('input');qin.id=`q${i.id}`;qin.type='number';qin.inputMode='numeric';qin.min=qmin;qin.max=qmax;qin.value=qmin;
-    qin.oninput=upd;el.append(lab,qin);
-  }
-  const tot=document.createElement('div');tot.className='total';
-  const err=document.createElement('div');err.className='err';err.setAttribute('role','alert');
-  const b=document.createElement('button');b.className='btn';b.textContent='إرسال الطلب';
-  const risky=i.price>=RISKY_PRICE||/frp/i.test(i.name||'');
-  let chk=null;
-  if(risky){
-    const w=document.createElement('div');w.className='warn';
-    w.textContent='تنبيه: الرقم الخاطئ أو غير الصالح لا يُسترد، وقد تتأخر بعض الحالات عن المدة المذكورة. تأكد من صحة البيانات قبل الإرسال.';
-    const l=document.createElement('label');l.className='ack';
-    chk=document.createElement('input');chk.type='checkbox';chk.onchange=()=>{err.textContent=''};
-    l.append(chk,document.createTextNode('قرأت التنبيه وأوافق عليه'));
-    el.append(w,l);
-  }
-  function qty(){return qin?parseInt(qin.value)||0:1}
-  function upd(){tot.textContent='الإجمالي: $'+(qty()*i.price).toFixed(2)}
-  upd();
-  b.onclick=async()=>{
-    const n=qty();
-    if(risky&&!chk.checked){err.style.color='';err.textContent='يرجى الموافقة على التنبيه أولًا';return}
-    if(qin&&(n<qmin||n>qmax)){err.textContent=`الكمية يجب أن تكون بين ${qmin} و ${qmax}`;return}
-    for(let k=0;k<inputs.length;k++){
-      const f=inputs[k],v=vals[k]||'';
-      if(f.required&&!v){err.textContent=`أدخل ${f.name}`;return}
-      if((f.type==='imei'||/^imei$/i.test(f.name))&&v&&!/^\d{15}$/.test(v)){err.textContent='رقم IMEI يجب أن يكون 15 رقمًا';return}
-    }
-    const values={};inputs.forEach((f,k)=>{if(vals[k])values[f.name]=vals[k]});
-    b.disabled=true;b.textContent='جاري الإرسال…';
-    let ref='';
-    try{
-      const r=await fetch(API+'/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_id:String(i.id),values,quantity:n})});
-      const d=await r.json();
-      if(!r.ok)throw new Error();
-      ref=d.ref;
-    }catch(x){err.textContent='تعذر إرسال الطلب. حاول مرة أخرى أو تواصل عبر واتساب.';b.disabled=false;b.textContent='إرسال الطلب';return}
-    const lines=inputs.map((f,k)=>`${f.name}: ${vals[k]||'-'}`);
-    const msg=`السلام عليكم\nرقم الطلب: ${ref}\nالخدمة: ${i.name}\nالكمية: ${n}\nالإجمالي: $${(n*i.price).toFixed(2)}\n${lines.join('\n')}${risky?'\nوافقت على شروط عدم الاسترداد.':''}\n\nتم الدفع عبر (بنكك / USDT). مرفق الإشعار.`;
-    const a=document.createElement('a');a.className='btn';a.target='_blank';a.rel='noopener';
-    a.href=`https://wa.me/${WA}?text=`+encodeURIComponent(msg);a.textContent='أكمل الدفع وأرسل الإشعار عبر واتساب';
-    b.replaceWith(a);err.style.color='#166534';err.textContent='تم تسجيل طلبك برقم '+ref+'. ادفع ثم أرسل الإشعار.';
-  };
-  el.append(tot,err,b);return el;
-}
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
-let dip=null;const ib=$('install');
-const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
-let dismissed=false;try{dismissed=localStorage.getItem('ms_install_x')==='1'}catch(e){}
-function showInstall(t){if(standalone||dismissed)return;if(t)$('installTxt').textContent=t;ib.hidden=false}
-addEventListener('beforeinstallprompt',e=>{e.preventDefault();dip=e;showInstall()});
-addEventListener('appinstalled',()=>{ib.hidden=true;dip=null});
-$('installBtn').onclick=async()=>{if(dip){dip.prompt();await dip.userChoice;dip=null;ib.hidden=true}else toast('من قائمة المتصفح اختر: تثبيت التطبيق')};
-$('installX').onclick=()=>{ib.hidden=true;try{localStorage.setItem('ms_install_x','1')}catch(e){}};
-if(/iphone|ipad|ipod/i.test(navigator.userAgent)&&!standalone){$('installBtn').hidden=true;showInstall('لتثبيت التطبيق: اضغط زر المشاركة ثم "إضافة إلى الشاشة الرئيسية"')}
-load();
+if(localStorage.getItem('mustafa_admin') === '1'){ showPanel(); }
 </script>
 </body>
 </html>
