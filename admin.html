@@ -68,7 +68,7 @@ button{background:#111;color:#fff;border:0;cursor:pointer;font-weight:700}
 <script>
 const API_URL = 'https://mustafa-api-mu.vercel.app';
 const ADMIN_PASSWORD = '123456';
-const API_SECRET = 'Kdcu1982@0900287738';
+const API_SECRET = 'حط_المفتاح_هنا';
 let allItems = [];
 
 function login(){
@@ -92,49 +92,4 @@ function showTab(t){
   document.getElementById('tabCatalog').classList.toggle('active', t==='catalog');
   document.getElementById('ordersCard').classList.toggle('hidden', t!=='orders');
   document.getElementById('catalogCard').classList.toggle('hidden', t!=='catalog');
-  if(t==='catalog' && allItems.length===0) loadCatalog();
-}
-async function loadStatus(){
-  try{
-    const r = await fetch(API_URL + '/health');
-    const d = await r.json();
-    document.getElementById('status').innerHTML = 'متصل ✅ <span class="badge">شغال</span>';
-    document.getElementById('dot').style.color = '#22c55e';
-  }catch(e){ document.getElementById('status').innerText = 'API unavailable ❌'; }
-}
-async function loadOrders(){
-  document.getElementById('orders').innerText = 'جاري...';
-  try{
-    const headers = {};
-    if(API_SECRET && API_SECRET !== 'حط_المفتاح_هنا') headers['x-admin-key'] = API_SECRET;
-    const r = await fetch(API_URL + '/admin/status', {headers: headers});
-    const d = await r.json();
-    document.getElementById('orders').innerHTML = '<pre style="white-space:pre-wrap;font-size:12px">' + JSON.stringify(d, null, 2) + '</pre>';
-  }catch(e){ document.getElementById('orders').innerText = 'ما قدرنا نجيب الطلبات: ' + e; }
-}
-async function loadCatalog(){
-  document.getElementById('catalog').innerText = 'جاري تحميل الخدمات...';
-  try{
-    const r = await fetch(API_URL + '/catalog?limit=100');
-    const d = await r.json();
-    allItems = d.items || [];
-    renderCatalog(allItems);
-  }catch(e){ document.getElementById('catalog').innerText = 'ما قدرنا نجيب الكتالوج'; }
-}
-function renderCatalog(list){
-  if(!list.length){ document.getElementById('catalog').innerText = 'ما في خدمات'; return; }
-  let html = '<p class="small">عرض ' + list.length + ' خدمة</p>';
-  list.slice(0,30).forEach(it=>{
-    html += '<div class="item"><span>' + (it.name || it.title || JSON.stringify(it)) + '</span><span class="badge">متوفر</span></div>';
-  });
-  document.getElementById('catalog').innerHTML = html;
-}
-function filterCatalog(){
-  const q = document.getElementById('search').value.toLowerCase();
-  const f = allItems.filter(it => JSON.stringify(it).toLowerCase().includes(q));
-  renderCatalog(f);
-}
-if(localStorage.getItem('mustafa_admin') === '1'){ showPanel(); }
-</script>
-</body>
-</html>
+  if(t==='
