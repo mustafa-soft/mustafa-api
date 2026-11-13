@@ -23,7 +23,7 @@ td,th{border-bottom:1px solid #eee;padding:8px;text-align:right;font-size:13px}
 <input type="password" id="adminPass" placeholder="كلمة سر الأدمن">
 <button onclick="login()">دخول</button>
 <p id="loginMsg" style="color:red"></p>
-<p style="font-size:12px;color:#888">كلمة السر الافتراضية للتجربة: <b>123456</b> - غيّرها من الكود بعدين</p>
+<p style="font-size:12px;color:#888">كلمة السر الحالية: <b>123456</b></p>
 </div>
 
 <div id="panel" class="hidden">
@@ -41,6 +41,7 @@ function login(){
   const p = document.getElementById('adminPass').value;
   if(p === ADMIN_PASSWORD){
     localStorage.setItem('mustafa_admin','1');
+    localStorage.setItem('mustafa_admin_pass', p);
     showPanel();
   } else {
     document.getElementById('loginMsg').innerText = 'كلمة السر غلط';
@@ -48,6 +49,7 @@ function login(){
 }
 function logout(){
   localStorage.removeItem('mustafa_admin');
+  localStorage.removeItem('mustafa_admin_pass');
   location.reload();
 }
 function showPanel(){
@@ -59,31 +61,4 @@ function showPanel(){
 }
 async function loadStatus(){
   try{
-    const r = await fetch(API_URL + '/health');
-    const d = await r.json();
-    document.getElementById('status').innerText = 'متصل بالـ API ✅ : ' + JSON.stringify(d);
-  }catch(e){ document.getElementById('status').innerText = 'API unavailable ❌'; }
-}
-async function loadOrders(){
-  try{
-    const r = await fetch(API_URL + '/admin/status', {headers:{'x-admin-key': document.getElementById('adminPass').value || ADMIN_PASSWORD}});
-    const d = await r.json();
-    document.getElementById('orders').innerHTML = '<pre style="white-space:pre-wrap">' + JSON.stringify(d, null, 2) + '</pre>';
-  }catch(e){ document.getElementById('orders').innerText = 'ما قدرنا نجيب الطلبات: ' + e; }
-}
-async function loadCatalog(){
-  try{
-    const r = await fetch(API_URL + '/catalog?limit=20');
-    const d = await r.json();
-    let html = '<p>إجمالي الخدمات: ' + (d.total || d.items?.length || 0) + '</p><table><tr><th>الخدمة</th></tr>';
-    (d.items || []).slice(0,20).forEach(it=>{
-      html += '<tr><td>' + (it.name || it.title || JSON.stringify(it)) + '</td></tr>';
-    });
-    html += '</table>';
-    document.getElementById('catalog').innerHTML = html;
-  }catch(e){ document.getElementById('catalog').innerText = 'ما قدرنا نجيب الكتالوج'; }
-}
-if(localStorage.getItem('mustafa_admin') === '1'){ showPanel(); }
-</script>
-</body>
-</html>
+    const r = await
