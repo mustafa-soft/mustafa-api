@@ -160,118 +160,144 @@ $('more').onclick=more;
 let tm;$('q').oninput=()=>{clearTimeout(tm);tm=setTimeout(apply,200)};$('cat').onchange=$('typ').onchange=apply;
 
 function card(i){
-  const el=document.createElement('article');el.className='card';
-  const qf=(i.fields||[]).find(f=>(f.type||'').toLowerCase()==='quantity');
-  const inputs=(i.fields||[]).filter(f=>f!==qf);
-  const qmin=qf?Math.max(1,parseInt(qf.min)||1):1, qmax=qf?(parseInt(qf.max)||100000):1;
-  el.innerHTML=`<h4>${esc(i.name)}</h4><div class="cat">${esc(i.category||'')}</div>
-  <div class="row"><span class="price">$${Number(i.price).toFixed(2)}</span><span class="time">للوحدة | <bdi>${esc(i.time||'')}</bdi></span></div>`;
-  const vals={};
-  
-  inputs.forEach((f,k)=>{
-    const id=`f${i.id}_${k}`,lab=document.createElement('label');lab.htmlFor=id;lab.textContent=f.name+(f.required?' *':'');
+  try {
+    const el=document.createElement('article');el.className='card';
+    const qf=(i.fields||[]).find(f=>(f.type||'').toLowerCase()==='quantity');
+    const inputs=(i.fields||[]).filter(f=>f!==qf);
+    const qmin=qf?Math.max(1,parseInt(qf.min)||1):1, qmax=qf?(parseInt(qf.max)||100000):1;
     
-    // التعديل الجديد: إضافة زر الفحص بجانب حقل IMEI
-    if(f.type==='imei'||/imei/i.test(f.name)) {
-        const rowDiv = document.createElement('div');
-        rowDiv.style.display = 'flex';
-        rowDiv.style.gap = '8px';
-        
-        const inp=document.createElement('input');inp.id=id;inp.autocomplete='off';
-        inp.placeholder='15 رقمًا';
-        inp.oninput=()=>{vals[k]=inp.value.trim();err.textContent=''};
-        
-        const checkBtn = document.createElement('button');
-        checkBtn.className = 'btn light';
-        checkBtn.style.height = '42px';
-        checkBtn.style.whiteSpace = 'nowrap';
-        checkBtn.textContent = 'فحص';
-        checkBtn.type = 'button';
-        checkBtn.onclick = async (e) => {
-            e.preventDefault();
-            if(!/^\d{15}$/.test(inp.value.trim())) { toast('أدخل 15 رقم صحيح'); return; }
-            checkBtn.textContent = '...';
-            checkBtn.disabled = true;
-            try {
-                // الاتصال بملف بايثون الذي أنشأناه في Vercel
-                const res = await fetch(API + '/api/check-imei', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ imei: inp.value.trim(), service_id: i.id })
-                });
-                const data = await res.json();
-                
-                if (data.error) {
-                    toast('خطأ: ' + (data.error.message || data.error));
-                } else {
-                    toast('تم الفحص بنجاح! راجع الكونسول للتفاصيل');
-                    console.log(data); // ستجد النتيجة كاملة هنا
-                }
-            } catch(e) {
-                toast('خطأ في الاتصال بالخادم');
-            }
-            checkBtn.textContent = 'فحص';
-            checkBtn.disabled = false;
-        };
-        
-        rowDiv.append(inp, checkBtn);
-        el.append(lab, rowDiv);
-    } else {
-        const inp=document.createElement('input');inp.id=id;inp.autocomplete='off';
-        inp.placeholder=f.name;
-        inp.oninput=()=>{vals[k]=inp.value.trim();err.textContent=''};
-        el.append(lab,inp);
-    }
-  });
+    const err=document.createElement('div');err.className='err';err.setAttribute('role','alert');
 
-  let qin=null;
-  if(qf&&qmax>1){
-    const lab=document.createElement('label');lab.textContent=`الكمية (${qmin} إلى ${qmax})`;lab.htmlFor=`q${i.id}`;
-    qin=document.createElement('input');qin.id=`q${i.id}`;qin.type='number';qin.inputMode='numeric';qin.min=qmin;qin.max=qmax;qin.value=qmin;
-    qin.oninput=upd;el.append(lab,qin);
-  }
-  const tot=document.createElement('div');tot.className='total';
-  const err=document.createElement('div');err.className='err';err.setAttribute('role','alert');
-  const b=document.createElement('button');b.className='btn';b.textContent='إرسال الطلب';
-  const risky=i.price>=RISKY_PRICE||/frp/i.test(i.name||'');
-  let chk=null;
-  if(risky){
-    const w=document.createElement('div');w.className='warn';
-    w.textContent='تنبيه: الرقم الخاطئ أو غير الصالح لا يُسترد، وقد تتأخر بعض الحالات عن المدة المذكورة. تأكد من صحة البيانات قبل الإرسال.';
-    const l=document.createElement('label');l.className='ack';
-    chk=document.createElement('input');chk.type='checkbox';chk.onchange=()=>{err.textContent=''};
-    l.append(chk,document.createTextNode('قرأت التنبيه وأوافق عليه'));
-    el.append(w,l);
-  }
-  function qty(){return qin?parseInt(qin.value)||0:1}
-  function upd(){tot.textContent='الإجمالي: $'+(qty()*i.price).toFixed(2)}
-  upd();
-  
-  b.onclick=async()=>{
-    const n=qty();
-    if(risky&&!chk.checked){err.style.color='';err.textContent='يرجى الموافقة على التنبيه أولًا';return}
-    if(qin&&(n<qmin||n>qmax)){err.textContent=`الكمية يجب أن تكون بين ${qmin} و ${qmax}`;return}
-    for(let k=0;k<inputs.length;k++){
-      const f=inputs[k],v=vals[k]||'';
-      if(f.required&&!v){err.textContent=`أدخل ${f.name}`;return}
-      if((f.type==='imei'||/^imei$/i.test(f.name))&&v&&!/^\d{15}$/.test(v)){err.textContent='رقم IMEI يجب أن يكون 15 رقمًا';return}
+    el.innerHTML=`<h4>${esc(i.name)}</h4><div class="cat">${esc(i.category||'')}</div>
+    <div class="row"><span class="price">$${Number(i.price).toFixed(2)}</span><span class="time">للوحدة | <bdi>${esc(i.time||'')}</bdi></span></div>`;
+    const vals={};
+    
+    inputs.forEach((f,k)=>{
+      const id=`f${i.id}_${k}`,lab=document.createElement('label');lab.htmlFor=id;lab.textContent=f.name+(f.required?' *':'');
+      
+      // إضافة زر الفحص بجانب حقل IMEI
+      if(f.type==='imei'||/imei/i.test(f.name)) {
+          const rowDiv = document.createElement('div');
+          rowDiv.style.display = 'flex';
+          rowDiv.style.gap = '8px';
+          rowDiv.style.marginBottom = '8px'; 
+          
+          const inp=document.createElement('input');inp.id=id;inp.autocomplete='off';
+          inp.placeholder='15 رقمًا';
+          inp.oninput=()=>{vals[k]=inp.value.trim();err.textContent=''};
+          
+          const checkBtn = document.createElement('button');
+          checkBtn.className = 'btn'; 
+          checkBtn.style.height = '42px';
+          checkBtn.style.whiteSpace = 'nowrap';
+          checkBtn.style.padding = '0 10px';
+          checkBtn.textContent = 'فحص';
+          checkBtn.type = 'button';
+          
+          const resultBox = document.createElement('div');
+          resultBox.style.fontSize = '12px';
+          resultBox.style.marginTop = '5px';
+          resultBox.style.padding = '8px';
+          resultBox.style.borderRadius = '8px';
+          resultBox.style.display = 'none';
+
+          checkBtn.onclick = async (e) => {
+              e.preventDefault();
+              if(!/^\d{15}$/.test(inp.value.trim())) { toast('أدخل 15 رقم صحيح'); return; }
+              checkBtn.textContent = '...';
+              checkBtn.disabled = true;
+              resultBox.style.display = 'block';
+              resultBox.style.background = '#F1F5F9';
+              resultBox.style.color = '#0F172A';
+              resultBox.textContent = 'جاري الفحص...';
+              
+              try {
+                  const res = await fetch(API + '/api/check-imei', {
+                      method: 'POST',
+                      headers: {'Content-Type': 'application/json'},
+                      body: JSON.stringify({ imei: inp.value.trim(), service_id: i.id })
+                  });
+                  const data = await res.json();
+                  
+                  if (data.error) {
+                      resultBox.style.background = '#FEF2F2';
+                      resultBox.style.color = '#B91C1C';
+                      resultBox.textContent = 'خطأ: ' + (data.error.message || data.error);
+                  } else {
+                      resultBox.style.background = '#DCFCE7';
+                      resultBox.style.color = '#166534';
+                      resultBox.textContent = 'النتيجة: ' + (data.result || data.message || JSON.stringify(data));
+                  }
+              } catch(e) {
+                  resultBox.style.background = '#FEF2F2';
+                  resultBox.style.color = '#B91C1C';
+                  resultBox.textContent = 'خطأ في الاتصال بالخادم (تأكد من إعدادات Vercel)';
+              }
+              checkBtn.textContent = 'فحص';
+              checkBtn.disabled = false;
+          };
+          
+          rowDiv.append(inp, checkBtn);
+          el.append(lab, rowDiv, resultBox); 
+      } else {
+          const inp=document.createElement('input');inp.id=id;inp.autocomplete='off';
+          inp.placeholder=f.name;
+          inp.oninput=()=>{vals[k]=inp.value.trim();err.textContent=''};
+          el.append(lab,inp);
+      }
+    });
+
+    let qin=null;
+    if(qf&&qmax>1){
+      const lab=document.createElement('label');lab.textContent=`الكمية (${qmin} إلى ${qmax})`;lab.htmlFor=`q${i.id}`;
+      qin=document.createElement('input');qin.id=`q${i.id}`;qin.type='number';qin.inputMode='numeric';qin.min=qmin;qin.max=qmax;qin.value=qmin;
+      qin.oninput=upd;el.append(lab,qin);
     }
-    const values={};inputs.forEach((f,k)=>{if(vals[k])values[f.name]=vals[k]});
-    b.disabled=true;b.textContent='جاري الإرسال…';
-    let ref='';
-    try{
-      const r=await fetch(API+'/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_id:String(i.id),values,quantity:n})});
-      const d=await r.json();
-      if(!r.ok)throw new Error();
-      ref=d.ref;
-    }catch(x){err.textContent='تعذر إرسال الطلب. حاول مرة أخرى أو تواصل عبر واتساب.';b.disabled=false;b.textContent='إرسال الطلب';return}
-    const lines=inputs.map((f,k)=>`${f.name}: ${vals[k]||'-'}`);
-    const msg=`السلام عليكم\nرقم الطلب: ${ref}\nالخدمة: ${i.name}\nالكمية: ${n}\nالإجمالي: $${(n*i.price).toFixed(2)}\n${lines.join('\n')}${risky?'\nوافقت على شروط عدم الاسترداد.':''}\n\nتم الدفع عبر (بنكك / USDT). مرفق الإشعار.`;
-    const a=document.createElement('a');a.className='btn';a.target='_blank';a.rel='noopener';
-    a.href=`https://wa.me/${WA}?text=`+encodeURIComponent(msg);a.textContent='أكمل الدفع وأرسل الإشعار عبر واتساب';
-    b.replaceWith(a);err.style.color='#166534';err.textContent='تم تسجيل طلبك برقم '+ref+'. ادفع ثم أرسل الإشعار.';
-  };
-  el.append(tot,err,b);return el;
+    const tot=document.createElement('div');tot.className='total';
+    const b=document.createElement('button');b.className='btn';b.textContent='إرسال الطلب';
+    const risky=i.price>=RISKY_PRICE||/frp/i.test(i.name||'');
+    let chk=null;
+    if(risky){
+      const w=document.createElement('div');w.className='warn';
+      w.textContent='تنبيه: الرقم الخاطئ أو غير الصالح لا يُسترد، وقد تتأخر بعض الحالات عن المدة المذكورة. تأكد من صحة البيانات قبل الإرسال.';
+      const l=document.createElement('label');l.className='ack';
+      chk=document.createElement('input');chk.type='checkbox';chk.onchange=()=>{err.textContent=''};
+      l.append(chk,document.createTextNode('قرأت التنبيه وأوافق عليه'));
+      el.append(w,l);
+    }
+    function qty(){return qin?parseInt(qin.value)||0:1}
+    function upd(){tot.textContent='الإجمالي: $'+(qty()*i.price).toFixed(2)}
+    upd();
+    
+    b.onclick=async()=>{
+       const n=qty();
+       if(risky&&!chk.checked){err.style.color='';err.textContent='يرجى الموافقة على التنبيه أولًا';return}
+       if(qin&&(n<qmin||n>qmax)){err.textContent=`الكمية يجب أن تكون بين ${qmin} و ${qmax}`;return}
+       for(let k=0;k<inputs.length;k++){
+         const f=inputs[k],v=vals[k]||'';
+         if(f.required&&!v){err.textContent=`أدخل ${f.name}`;return}
+         if((f.type==='imei'||/^imei$/i.test(f.name))&&v&&!/^\d{15}$/.test(v)){err.textContent='رقم IMEI يجب أن يكون 15 رقمًا';return}
+       }
+       const values={};inputs.forEach((f,k)=>{if(vals[k])values[f.name]=vals[k]});
+       b.disabled=true;b.textContent='جاري الإرسال…';
+       let ref='';
+       try{
+         const r=await fetch(API+'/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_id:String(i.id),values,quantity:n})});
+         const d=await r.json();
+         if(!r.ok)throw new Error();
+         ref=d.ref;
+       }catch(x){err.textContent='تعذر إرسال الطلب. حاول مرة أخرى أو تواصل عبر واتساب.';b.disabled=false;b.textContent='إرسال الطلب';return}
+       const lines=inputs.map((f,k)=>`${f.name}: ${vals[k]||'-'}`);
+       const msg=`السلام عليكم\nرقم الطلب: ${ref}\nالخدمة: ${i.name}\nالكمية: ${n}\nالإجمالي: $${(n*i.price).toFixed(2)}\n${lines.join('\n')}${risky?'\nوافقت على شروط عدم الاسترداد.':''}\n\nتم الدفع عبر (بنكك / USDT). مرفق الإشعار.`;
+       const a=document.createElement('a');a.className='btn';a.target='_blank';a.rel='noopener';
+       a.href=`https://wa.me/${WA}?text=`+encodeURIComponent(msg);a.textContent='أكمل الدفع وأرسل الإشعار عبر واتساب';
+       b.replaceWith(a);err.style.color='#166534';err.textContent='تم تسجيل طلبك برقم '+ref+'. ادفع ثم أرسل الإشعار.';
+    };
+    el.append(tot,err,b);return el;
+  } catch(e) {
+    console.error("حدث خطأ:", e);
+    return document.createElement('div');
+  }
 }
 
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
