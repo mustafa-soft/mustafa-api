@@ -126,12 +126,36 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-copy]');if
 
 async function load(){
   try{
+    // 1. جلب خدماتك الـ 658 من Vercel
     let off=0,total=1;
     while(off<total){
       const r=await fetch(`${API}/catalog?limit=200&offset=${off}${ONLY?'&q='+encodeURIComponent(ONLY):''}`);
       if(!r.ok)throw new Error(r.status);
       const d=await r.json();total=d.total;ALL=ALL.concat(d.items);off+=200;
     }
+    
+    // 2. جلب خدمات المزود الجديد من Vercel (الملف الجديد fetch_services.py)
+    try {
+        const unlockRes = await fetch('https://mustafa-api-mu.vercel.app/api/fetch_services');
+        if (unlockRes.ok) {
+            const unlockData = await unlockRes.json();
+            if (Array.isArray(unlockData)) {
+                const unlockServices = unlockData.map(service => ({
+                    id: 'unlock_' + (service.id || Math.random()),
+                    name: service.name || service.service_name || 'Unlock Service',
+                    price: parseFloat(service.price) || 0,
+                    category: 'IMEI Unlock Services',
+                    category_id: 'unlock_cat',
+                    type: 'imei',
+                    fields: [{name: 'IMEI', type: 'imei', required: true}]
+                }));
+                ALL = ALL.concat(unlockServices);
+            }
+        }
+    } catch (e) {
+        console.log("لم نتمكن من جلب خدمات المزود الجديد", e);
+    }
+
     $('status').textContent='متصل';$('status').className='pill on';
     const cats=[...new Map(ALL.filter(i=>i.category).map(i=>[i.category_id,i.category])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
     $('cat').innerHTML='<option value="">كل الأقسام</option>'+cats.map(([id,n])=>`<option value="${esc(id)}">${esc(n)}</option>`).join('');
@@ -175,7 +199,6 @@ function card(i){
     inputs.forEach((f,k)=>{
       const id=`f${i.id}_${k}`,lab=document.createElement('label');lab.htmlFor=id;lab.textContent=f.name+(f.required?' *':'');
       
-      // إضافة زر الفحص بجانب حقل IMEI
       if(f.type==='imei'||/imei/i.test(f.name)) {
           const rowDiv = document.createElement('div');
           rowDiv.style.display = 'flex';
