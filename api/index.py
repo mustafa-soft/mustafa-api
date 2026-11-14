@@ -2657,3 +2657,33 @@ def get_unlock_services():
             return json.loads(result) # FastAPI سيقوم بتحويلها إلى JSON تلقائياً
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+import urllib.request
+import urllib.parse
+import os
+import json
+from fastapi import HTTPException
+
+@app.get("/api/fetch_new_services")
+def get_new_services():
+    username = os.environ.get('NEW_API_USERNAME')
+    api_key = os.environ.get('NEW_API_KEY')
+    api_url = os.environ.get('NEW_API_URL')
+
+    if not username or not api_key or not api_url:
+        raise HTTPException(status_code=500, detail="Missing environment variables")
+
+    payload = urllib.parse.urlencode({
+        'username': username,
+        'apiaccesskey': api_key,
+        'action': 'imeiservicelist',
+        'requestformat': 'JSON'
+    }).encode('utf-8')
+
+    try:
+        req = urllib.request.Request(api_url, data=payload)
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        with urllib.request.urlopen(req) as response:
+            result = response.read().decode('utf-8')
+            return json.loads(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
