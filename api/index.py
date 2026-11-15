@@ -825,3 +825,53 @@ def admin_page():
 
 app.include_router(router)
 app.include_router(router, prefix="/api")
+
+# ==========================================
+# كود الربط النهائي والذكي مع lock2unlock
+# ==========================================
+import requests
+from fastapi import HTTPException
+
+@app.get("/api/fetch_lock2unlock_services")
+def fetch_lock2unlock_services():
+    username = os.environ.get('LOCK2UNLOCK_USERNAME')
+    api_key = os.environ.get('LOCK2UNLOCK_API_KEY')
+
+    if not username or not api_key:
+        raise HTTPException(status_code=500, detail="Missing LOCK2UNLOCK_USERNAME or LOCK2UNLOCK_API_KEY in Vercel")
+
+    # قائمة بالمسارات المحتملة التي قد يستخدمها نظام Dhru Fusion
+    urls_to_try = [
+        "https://lock2unlock.in/api/index.php",
+        "https://lock2unlock.in/public/index.php",
+        "https://lock2unlock.in/public/api.php",
+        "https://lock2unlock.in/api.php"
+    ]
+
+    payload = {
+        'username': username,
+        'apiaccesskey': api_key,
+        'action': 'imeiservicelist',
+        'requestformat': 'JSON'
+    }
+
+    # تجربة كل رابط حتى ينجح أحدها
+    for url in urls_to_try:
+        try:
+            # allow_redirects=True تتبع التوجيهات بأمان دون الدخول في حلقة مفرغة
+            response = requests.post(url, data=payload, timeout=20, allow_redirects=True)
+            
+            if response.status_code == 200:
+                # التأكد من أن الرد هو JSON وليس صفحة HTML
+                content_type = response.headers.get('Content-Type', '')
+                if 'application/json' in content_type:
+                    return response.json()
+                else:
+                    # إذا كان الرد HTML، نكمل تجربة الرابط التالي
+                    continue
+        except Exception:
+            # إذا فشل الاتصال، نكمل تجربة الرابط التالي
+            continue
+
+    # إذا فشلت جميع المحاولات
+    raise HTTPException(status_code=502, detail="Failed to connect to lock2unlock API. Check credentials or IP whitelist.")
