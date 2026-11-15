@@ -2687,3 +2687,31 @@ def get_new_services():
             return json.loads(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+import requests
+from fastapi import HTTPException
+
+@app.get("/api/fetch_new_services")
+def get_new_services():
+    username = os.environ.get('NEW_API_USERNAME')
+    api_key = os.environ.get('NEW_API_KEY')
+    api_url = os.environ.get('NEW_API_URL')
+
+    if not username or not api_key or not api_url:
+        raise HTTPException(status_code=500, detail="Missing environment variables")
+
+    payload = {
+        'username': username,
+        'apiaccesskey': api_key,
+        'action': 'imeiservicelist',
+        'requestformat': 'JSON'
+    }
+
+    try:
+        # استخدام requests بدلاً من urllib
+        res = requests.post(api_url, data=payload, timeout=20, allow_redirects=True)
+        res.raise_for_status()
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
