@@ -1537,3 +1537,45 @@ def admin_page():
 
 app.include_router(router)
 app.include_router(router, prefix="/api")
+
+
+# ==========================================
+# كود ربط خدمات IMEIServer.com
+# ==========================================
+import requests
+from fastapi import HTTPException
+
+@app.get("/api/fetch_imeserver_services")
+def fetch_imeserver_services():
+    # جلب البيانات من متغيرات Vercel
+    username = os.environ.get('IMESERVER_USERNAME')
+    api_key = os.environ.get('IMESERVER_API_KEY')
+    api_url = os.environ.get('IMESERVER_API_URL', "https://www.imeiserver.com/dhru")
+
+    if not username or not api_key:
+        raise HTTPException(status_code=500, detail="Missing IMESERVER variables in Vercel")
+
+    # تجهيز الطلب لنظام Dhru Fusion
+    payload = {
+        'username': username,
+        'apiaccesskey': api_key,
+        'action': 'imeiservicelist',
+        'requestformat': 'JSON'
+    }
+
+    try:
+        # إرسال الطلب إلى الرابط الصحيح
+        response = requests.post(api_url, data=payload, timeout=30)
+        
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "http_code": response.status_code,
+                "provider_says": response.text[:300],
+                "solution": "Check API credentials or IP restrictions"
+            }
+            
+        return response.json()
+        
+    except Exception as e:
+        return {"error": f"Connection failed: {str(e)}"}
