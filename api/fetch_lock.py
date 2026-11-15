@@ -5,15 +5,16 @@ import requests
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # جلب البيانات بناءً على الأسماء التي كتبتها في Vercel
         username = os.environ.get('LOCK2UNLOCK_USERNAME')
         api_key = os.environ.get('LOCK2UNLOCK_API_KEY')
-        api_url = os.environ.get('LOCK2UNLOCK_API_URL', "https://lock2unlock.in/api/index.php")
+        api_url = os.environ.get('NEW_API_URL', "https://lock2unlock.in/public")
 
-        if not username or not api_key:
+        if not username or not api_key or not api_url:
             self.send_response(500)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Missing env vars in Vercel"}).encode('utf-8'))
+            self.wfile.write(json.dumps({"error": "Missing env vars in Vercel", "user": username, "key": api_key, "url": api_url}).encode('utf-8'))
             return
 
         payload = {
@@ -34,7 +35,7 @@ class handler(BaseHTTPRequestHandler):
                     "status": "error",
                     "http_code": response.status_code,
                     "provider_says": response.text[:300],
-                    "solution": "Please remove IP restriction from lock2unlock.in"
+                    "solution": "Remove IP restriction or check the URL/Auth"
                 }).encode('utf-8'))
                 return
 
