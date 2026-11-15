@@ -2160,32 +2160,19 @@ def admin_place(body: PlaceIn, request: Request):
     }
 
 
-@router.get("/admin/status", dependencies=[Depends(require_admin)])
-def admin_status(uuid: str = ""):
-    if not UUID_RE.match(uuid):
-        raise HTTPException(status_code=422, detail="Invalid order_uuid")
-    data = fusion("GET", "/order", params={"order_uuid": uuid})
-    return data.get("data")
-
 # ==========================================
-# كود ذكي للبحث عن رابط API الصحيح لـ lock2unlock
+# الكود النهائي لربط lock2unlock (بعد اكتشاف المسار)
 # ==========================================
 @app.get("/api/fetch_lock_final")
 def fetch_lock_final():
     username = os.environ.get('LOCK2UNLOCK_USERNAME')
     api_key = os.environ.get('LOCK2UNLOCK_API_KEY')
-    base_url = os.environ.get('LOCK2UNLOCK_API_URL', "https://lock2unlock.in/public")
+    
+    # الرابط الحقيقي الذي اكتشفناه من رد السيرفر
+    api_url = "https://lock2unlock.in/public/index.php"
 
     if not username or not api_key:
         return {"error": "المتغيرات غير موجودة في Vercel"}
-
-    # قائمة بالمسارات التي قد يستخدمها النظام
-    urls_to_try = [
-        base_url,
-        f"{base_url}/api.php",
-        "https://lock2unlock.in/api/index.php",
-        "https://lock2unlock.in/api.php"
-    ]
 
     payload = {
         'username': username,
@@ -2194,30 +2181,21 @@ def fetch_lock_final():
         'requestformat': 'JSON'
     }
 
-    results = []
-
-    for url in urls_to_try:
-        try:
-            # allow_redirects=False تمنع الدخول في حلقة التوجيه
-            response = requests.post(url, data=payload, timeout=15, allow_redirects=False)
+    try:
+        # إرسال الطلب
+        response = requests.post(api_url, data=payload, timeout=30)
+        
+        # إذا رفض الموقع الطلب
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "http_code": response.status_code,
+                "provider_response": response.text[:300],
+                "solution": "تأكد من إزالة قيد الـ IP من lock2unlock"
+            }
             
-            # إذا نجح الرابط، نرجع البيانات فوراً
-            if response.status_code == 200:
-                return response.json()
-            
-            # إذا كان هناك توجيه، نسجل أين يريد أن يذهب
-            results.append({
-                "url_tried": url,
-                "status_code": response.status_code,
-                "redirect_location": response.headers.get('Location', 'None')
-            })
-            
-        except Exception as e:
-            results.append({"url_tried": url, "error": str(e)})
-
-    # إذا فشلت كل المحاولات، نعرض تقرير الأخطاء
-    return {
-        "status": "Debugging",
-        "message": "كل الروابط فشلت. انظر إلى redirect_location لمعرفة المسار الصحيح.",
-        "results": results
-    }
+        # إذا نجح، نرجع البيانات
+        return response.json()
+        
+    except Exception as e:
+        return {"error": f"فشل الاتصال: {str(e)}"}
