@@ -2,3 +2,5 @@ fastapi
 requests
 pydantic
 requests
+Flask==3.0.3
+requests==2.31.0
