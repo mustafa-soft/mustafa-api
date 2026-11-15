@@ -2778,3 +2778,44 @@ def fetch_lock2unlock_services():
         return response.json()
     except Exception as e:
         return {"error": str(e)}
+
+# ==========================================
+# كود ربط خدمات lock2unlock.in (النسخة الآمنة)
+# ==========================================
+import requests
+from fastapi import HTTPException
+
+@app.get("/api/fetch_services_v2")
+def fetch_lock2unlock_services_v2():
+    # جلب البيانات من إعدادات Vercel
+    username = os.environ.get('LOCK2UNLOCK_USERNAME')
+    api_key = os.environ.get('LOCK2UNLOCK_API_KEY')
+    api_url = os.environ.get('LOCK2UNLOCK_API_URL', "https://lock2unlock.in/api/index.php")
+
+    if not username or not api_key:
+        return {"error": "المتغيرات LOCK2UNLOCK_USERNAME أو LOCK2UNLOCK_API_KEY غير موجودة في Vercel"}
+
+    # تجهيز الطلب لنظام Dhru Fusion
+    payload = {
+        'username': username,
+        'apiaccesskey': api_key,
+        'action': 'imeiservicelist',
+        'requestformat': 'JSON'
+    }
+
+    try:
+        response = requests.post(api_url, data=payload, timeout=30)
+        
+        # إذا رفض الموقع الطلب (مثل خطأ 403)، نطبع سبب الرفض
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "http_code": response.status_code,
+                "provider_response": response.text[:500],
+                "message": "تأكد من إزالة قيد الـ IP من لوحة تحكم lock2unlock"
+            }
+            
+        return response.json()
+        
+    except Exception as e:
+        return {"error": f"فشل الاتصال: {str(e)}"}
