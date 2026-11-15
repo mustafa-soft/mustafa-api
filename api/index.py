@@ -9,6 +9,11 @@ from urllib.parse import urlparse
 import logging
 
 import requests
+
+try:
+    import bcrypt
+except ImportError:  # أضف bcrypt إلى requirements.txt
+    bcrypt = None
 from fastapi import FastAPI, APIRouter, Header, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -56,7 +61,7 @@ IU_USER = env("IMEI_UNLOCK_USERNAME")
 IU_KEY = env("IMEI_UNLOCK_API_KEY")
 IU_PROXY_URL = env("IMEI_UNLOCK_PROXY_URL").rstrip("/")
 IU_PROXY_KEY = env("IMEI_UNLOCK_PROXY_KEY")
-IU_ENABLED = bool((IU_PROXY_URL and IU_PROXY_KEY) or (IU_URL and IU_USER and IU_KEY))
+IU_ENABLED = bool(IU_USER and IU_KEY and (IU_URL or (IU_PROXY_URL and IU_PROXY_KEY)))
 L2U_URL = env("L2U_API_URL").rstrip("/")
 L2U_USER = env("L2U_USERNAME")
 L2U_KEY = env("L2U_API_KEY")
@@ -391,12 +396,13 @@ def _num(v):
 
 def iu_call(action, timeout=30):
     """يستدعي imei-unlock: عبر الـ VPS (عنوان IP ثابت) لو الوسيط مضبوط، وإلا مباشرة."""
-    use_proxy = bool(IU_PROXY_URL and IU_PROXY_KEY)
+    use_proxy = bool(IU_PROXY_URL and IU_PROXY_KEY)  # عبر الاستضافة ذات الـ IP الثابت
     try:
         if use_proxy:
-            r = requests.get(
-                f"{IU_PROXY_URL}/iu",
-                params={"action": action},
+            relay = IU_PROXY_URL if IU_PROXY_URL.lower().endswith(".php") else IU_PROXY_URL + "/iu"
+            r = requests.post(
+                relay,
+                data={"username": IU_USER, "apiaccesskey": IU_KEY, "action": action},
                 headers={"X-Proxy-Key": IU_PROXY_KEY},
                 timeout=timeout,
             )
@@ -525,42 +531,120 @@ def catalog_iu():
 
 
 # ---------------------------------------------------------------
-# imeiserver.com (Dhru Fusion الكلاسيكي): imeiservicelist فقط، والتنفيذ يدوي
-# الرابط: https://www.imeiserver.com/dhru ، ويُضاف /api/index.php تلقائيًا
+# imeiserver.com (WebX Next API): GET/POST {url}/api/{route}
+# ترويسة التوثيق: Auth-Key = bcrypt(username + apiKey)   (مثل مكتبة WebX الرسمية)
+# المسارات: / (الحساب) ، imei-services ، server-services ، imei-orders ، server-orders
+# الرابط في Vercel: IMEISERVER_API_URL=https://www.imeiserver.com
 # ---------------------------------------------------------------
-def ims_call(action, params=None, timeout=30):
-    base = IMS_URL
-    urls = [base] if base.lower().endswith(".php") else [base + "/api/index.php", base]
-    last = "imeiserver unreachable"
-    for url in urls:
-        try:
-            r = requests.post(
-                url,
-                data={
-                    "username": IMS_USER,
-                    "apiaccesskey": IMS_KEY,
-                    "action": action,
-                    "requestformat": "JSON",
-                    "parameters": base64.b64encode(json.dumps(params).encode()).decode() if params else "",
-                },
-                timeout=timeout,
-            )
-        except requests.RequestException:
-            last = "imeiserver unreachable"
+def _webx_auth():
+    if bcrypt is None:
+        raise HTTPException(status_code=503, detail="bcrypt not installed (add 'bcrypt' to requirements.txt)")
+    raw = (IMS_USER + IMS_KEY).encode()[:72]
+    h = bcrypt.hashpw(raw, bcrypt.gensalt(rounds=10))
+    return h.replace(b"$2b$", b"$2y$", 1).decode()
+
+
+def _webx_errors(j):
+    errs = j.get("errors")
+    if isinstance(errs, dict):
+        errs = list(errs.values())
+    parts = []
+    for e in errs if isinstance(errs, list) else [errs]:
+        parts.append(", ".join(str(x) for x in e) if isinstance(e, (list, tuple)) else str(e))
+    return "; ".join(parts)[:200]
+
+
+def webx_call(route="", params=None, method="GET", timeout=30, write=False):
+    base = IMS_URL if "://" in IMS_URL else "https://" + IMS_URL
+    base = base.rstrip("/")
+    if base.lower().endswith("/dhru"):
+        base = base[:-5]
+    url = f"{base}/api/{route}"
+    p = dict(params or {})
+    p["username"] = IMS_USER
+    headers = {"Accept": "application/json", "Auth-Key": _webx_auth()}
+    try:
+        if method == "POST":
+            r = requests.post(url, data=p, headers=headers, timeout=timeout)
+        else:
+            r = requests.get(url, params=p, headers=headers, timeout=timeout)
+    except requests.RequestException:
+        if write:
+            raise OrderUnknown("request failed")
+        raise HTTPException(status_code=502, detail="imeiserver unreachable")
+    try:
+        j = r.json()
+        if not isinstance(j, (dict, list)):
+            raise ValueError("unexpected body")
+    except ValueError:
+        if write and (r.status_code < 400 or r.status_code >= 500):
+            raise OrderUnknown("invalid response")
+        raise HTTPException(
+            status_code=502,
+            detail=f"imeiserver returned HTTP {r.status_code} (not JSON)",
+        )
+    if isinstance(j, dict) and j.get("errors"):
+        raise HTTPException(status_code=502, detail=f"imeiserver error: {_webx_errors(j)}")
+    if r.status_code >= 500 and write:
+        raise OrderUnknown("server error")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"imeiserver HTTP {r.status_code}")
+    return j
+
+
+def _label(x):
+    if isinstance(x, dict):
+        return str(x.get("name") or x.get("label") or x.get("title") or "")
+    return str(x or "")
+
+
+def _webx_extra_fields(raw):
+    """الحقول الإضافية للخدمة (شكلها غير موثق، فنقرأها بحذر)."""
+    items = list(raw.values()) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+    out = []
+    for d in items:
+        if not isinstance(d, dict):
             continue
-        try:
-            data = r.json()
-            if not isinstance(data, dict):
-                raise ValueError("not an object")
-        except ValueError:
-            last = f"imeiserver returned HTTP {r.status_code} (not JSON)"
+        nm = str(d.get("label") or d.get("name") or d.get("key") or "")
+        if nm:
+            out.append({"type": "text", "name": nm, "required": _truthy(d.get("required"))})
+    return out
+
+
+def parse_webx_services(data, kind):
+    """kind: 'i' = IMEI ، 's' = Server. الإرسال التلقائي فقط للخدمات بلا حقول إضافية."""
+    if isinstance(data, dict):
+        inner = data.get("data") if isinstance(data.get("data"), (list, dict)) else data
+        services = list(inner.values()) if isinstance(inner, dict) else inner
+    else:
+        services = data
+    items = []
+    for sv in services or []:
+        if not isinstance(sv, dict) or sv.get("id") in (None, ""):
             continue
-        err = data.get("ERROR")
-        if err:
-            msg = err[0].get("MESSAGE") if isinstance(err, list) and err and isinstance(err[0], dict) else str(err)[:200]
-            raise HTTPException(status_code=502, detail=f"imeiserver error: {str(msg)[:200]}")
-        return data
-    raise HTTPException(status_code=502, detail=last)
+        sid = f"ims-{kind}-{sv['id']}"
+        cost = _num(sv.get("credits"))
+        name = str(sv.get("name") or "")
+        cat = _label(sv.get("category")) or _label(sv.get("group")) or ("IMEIServer IMEI" if kind == "i" else "IMEIServer Server")
+        cid = "ims-" + cat
+        extra = _webx_extra_fields(sv.get("fields"))
+        fields = ([{"type": "imei", "name": "IMEI", "required": True}] if kind == "i" else []) + extra
+        items.append(
+            {
+                "id": sid,
+                "name": name,
+                "type": "imei" if kind == "i" else "server",
+                "category_id": cid,
+                "category": cat,
+                "cost": cost,
+                "price": markup_price(cost, cid, cat),
+                "time": time_text(sid, name, str(sv.get("time") or "")),
+                "fields": fields,
+                "supplier": "ims",
+                "auto": not extra,
+            }
+        )
+    return items
 
 
 def catalog_ims():
@@ -568,9 +652,39 @@ def catalog_ims():
     hit = _cache.get("ims")
     if hit and now - hit[0] < CACHE_TTL:
         return hit[1]
-    items = parse_dhru_services(ims_call("imeiservicelist"), "ims-", "ims")
+    items, last_err = [], None
+    for route, kind in (("imei-services", "i"), ("server-services", "s")):
+        try:
+            raw = webx_call(route)
+        except HTTPException as e:
+            last_err = e
+            log.error("imeiserver %s failed: %s", route, e.detail)
+            continue
+        part = parse_webx_services(raw, kind)
+        if part:
+            lst = raw.get("data") if isinstance(raw, dict) and isinstance(raw.get("data"), list) else raw
+            first = (list(lst.values()) if isinstance(lst, dict) else lst)
+            if first and "ims_sample" not in _cache:
+                _cache["ims_sample"] = first[0]
+        items += part
+    if not items and last_err:
+        raise last_err
     _cache["ims"] = (now, items)
     return items
+
+
+def _webx_status(uuid, j):
+    """status: 0 بانتظار، 1 قيد التنفيذ، 2 ملغي، 3 مرفوض، 4 ناجح."""
+    try:
+        st = int(j.get("status"))
+    except (TypeError, ValueError, AttributeError):
+        st = None
+    status = {4: "success", 3: "rejected", 2: "rejected"}.get(st, "sent")
+    resp = j.get("response") if isinstance(j, dict) else ""
+    replay = resp if isinstance(resp, str) else json.dumps(resp, ensure_ascii=False)
+    if status in ("success", "rejected"):
+        _apply_final(uuid, status, replay)
+    return {"status": status, "replay": replay, "code_status": st}
 
 
 # ---------------------------------------------------------------
@@ -769,7 +883,7 @@ def catalog_route(limit: int = 200, offset: int = 0, q: str = ""):
     return {
         "currency": currency,
         "total": len(items),
-        "items": [{k: v for k, v in i.items() if k not in ("cost", "supplier")} for i in page],
+        "items": [{k: v for k, v in i.items() if k not in ("cost", "supplier", "auto")} for i in page],
     }
 
 
@@ -901,9 +1015,15 @@ def selftest(k: str = ""):
         out["lock2unlock"] = "not configured"
     if IMS_ENABLED:
         try:
-            out["imeiserver_services"] = len(catalog_ims())
+            ai = webx_call("")
+            out["imeiserver_account"] = {k: ai.get(k) for k in ("balance", "currency")} if isinstance(ai, dict) else "?"
         except HTTPException as e:
             out["imeiserver_error"] = e.detail
+        try:
+            out["imeiserver_services"] = len(catalog_ims())
+            out["imeiserver_sample"] = json.dumps(_cache.get("ims_sample"), ensure_ascii=False)[:700]
+        except HTTPException as e:
+            out["imeiserver_services_error"] = e.detail
     else:
         out["imeiserver"] = "not configured"
     try:
@@ -976,6 +1096,63 @@ def _place_l2u(rec, product, payload, token, code, qty):
     }
 
 
+def _place_ims(rec, product, payload, token, code, qty):
+    h = token_hash(token)
+    ref_id = "ms-" + h[:24]
+    fields = payload.get("f") or {}
+    kind = product["id"].split("-")[1]
+    sid = product["id"].rsplit("-", 1)[1]
+    data = {"service_id": sid, "comments": f"MS {code}"}
+    if kind == "i":
+        device = str(fields.get("IMEI") or "").strip()
+        if not device:
+            raise HTTPException(status_code=422, detail="IMEI missing")
+        data["device"] = device
+        route = "imei-orders"
+    else:
+        data["quantity"] = qty
+        route = "server-orders"
+    if not lock(f"place:{ref_id}", 600):
+        raise HTTPException(status_code=409, detail="Already submitted, check the supplier panel")
+
+    def unknown():
+        rec.update(status="unknown", reference_id=ref_id)
+        order_save(rec)
+        notify(f"نتيجة غير معروفة للطلب {ref_id}. لا تعد الإرسال، راجع لوحة imeiserver.")
+        return JSONResponse(
+            status_code=202,
+            content={
+                "ok": False,
+                "unknown": True,
+                "code": code,
+                "reference_id": ref_id,
+                "detail": "Outcome unknown. Do NOT retry. Check the supplier panel.",
+            },
+        )
+
+    try:
+        resp = webx_call(route, data, "POST", timeout=ORDER_TIMEOUT, write=True)
+    except OrderUnknown:
+        return unknown()
+    except HTTPException:
+        unlock(f"place:{ref_id}")
+        raise
+    oid = resp.get("id") if isinstance(resp, dict) else None
+    if not oid:
+        return unknown()
+    uuid_ = f"ims-{kind}-{oid}"
+    rec.update(status="sent", reference_id=ref_id, order_uuid=uuid_)
+    order_save(rec)
+    notify(f"أُرسل إلى imeiserver: {ref_id}\nالرقم: {uuid_}")
+    return {
+        "ok": True,
+        "code": code,
+        "reference_id": ref_id,
+        "order_uuid": uuid_,
+        "note": resp.get("response") if isinstance(resp, dict) else None,
+    }
+
+
 @router.post("/admin/place", dependencies=[Depends(require_admin)])
 def admin_place(body: PlaceIn, request: Request):
     """ينفّذ الطلب عند المورد (يخصم من رصيدك). استخدمه بعد تأكيد الدفع فقط."""
@@ -1014,6 +1191,9 @@ def admin_place(body: PlaceIn, request: Request):
     if product.get("supplier") == "l2u":
         return _place_l2u(rec, product, payload, token, code, qty)
 
+    if product.get("supplier") == "ims" and product.get("auto"):
+        return _place_ims(rec, product, payload, token, code, qty)
+
     if product.get("supplier") in ("iu", "ims"):
         site = "imei-unlock.net" if product["supplier"] == "iu" else "imeiserver.com"
         rec["status"] = "manual"
@@ -1023,7 +1203,7 @@ def admin_place(body: PlaceIn, request: Request):
             "manual": True,
             "code": code,
             "supplier": site,
-            "service_id": product["id"].split("-", 1)[1],
+            "service_id": product["id"].rsplit("-", 1)[1],
             "service": product["name"],
             "quantity": qty,
             "fields": payload.get("f") or {},
@@ -1123,9 +1303,11 @@ def admin_status(uuid: str = ""):
     if uuid.startswith("ims-"):
         if not IMS_ENABLED:
             raise HTTPException(status_code=503, detail="imeiserver not configured")
-        ref = uuid[4:]
-        j = ims_call("getimeiorder", {"ID": int(ref) if ref.isdigit() else ref})
-        return _dhru_status(uuid, first_success(j))
+        parts = uuid.split("-")
+        if len(parts) != 3 or parts[1] not in ("i", "s") or not parts[2].isdigit():
+            raise HTTPException(status_code=422, detail="Use ims-i-<id> (IMEI) or ims-s-<id> (server)")
+        route = ("imei-orders" if parts[1] == "i" else "server-orders") + "/" + parts[2]
+        return _webx_status(uuid, webx_call(route))
     if uuid.startswith("l2-"):
         if not L2U_ENABLED:
             raise HTTPException(status_code=503, detail="lock2unlock not configured")
@@ -1144,7 +1326,7 @@ def admin_account():
         d = fusion("GET", "/account").get("data") or {}
         out.update(currency=d.get("currency"), balance=d.get("balance"), name=d.get("name"))
     except HTTPException as e:
-        if not L2U_ENABLED:
+        if not (L2U_ENABLED or IMS_ENABLED):
             raise
         out["error"] = e.detail
     if L2U_ENABLED:
@@ -1155,8 +1337,9 @@ def admin_account():
             out["extra"] = [{"name": "lock2unlock", "balance": "خطأ: " + str(e.detail)[:60]}]
     if IMS_ENABLED:
         try:
-            ai = first_success(ims_call("accountinfo")).get("AccountInfo") or {}
-            out.setdefault("extra", []).append({"name": "imeiserver", "balance": ai.get("credit")})
+            ai = webx_call("")
+            bal = f"{ai.get('balance')} {ai.get('currency') or ''}".strip() if isinstance(ai, dict) else "-"
+            out.setdefault("extra", []).append({"name": "imeiserver", "balance": bal})
         except HTTPException as e:
             out.setdefault("extra", []).append({"name": "imeiserver", "balance": "خطأ: " + str(e.detail)[:60]})
     return out
