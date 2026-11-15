@@ -61,6 +61,10 @@ L2U_URL = env("L2U_API_URL").rstrip("/")
 L2U_USER = env("L2U_USERNAME")
 L2U_KEY = env("L2U_API_KEY")
 L2U_ENABLED = bool(L2U_URL and L2U_USER and L2U_KEY)
+IMS_URL = env("IMEISERVER_API_URL").rstrip("/")
+IMS_USER = env("IMEISERVER_USERNAME")
+IMS_KEY = env("IMEISERVER_API_KEY")
+IMS_ENABLED = bool(IMS_URL and IMS_USER and IMS_KEY)
 ADMIN_SECRET = env("ADMIN_SECRET")
 ALLOWED_ORIGIN = env("ALLOWED_ORIGIN", "https://mustafa-soft.com").rstrip("/")
 PUBLIC_URL = env("PUBLIC_URL").rstrip("/")
@@ -521,6 +525,55 @@ def catalog_iu():
 
 
 # ---------------------------------------------------------------
+# imeiserver.com (Dhru Fusion الكلاسيكي): imeiservicelist فقط، والتنفيذ يدوي
+# الرابط: https://www.imeiserver.com/dhru ، ويُضاف /api/index.php تلقائيًا
+# ---------------------------------------------------------------
+def ims_call(action, params=None, timeout=30):
+    base = IMS_URL
+    urls = [base] if base.lower().endswith(".php") else [base + "/api/index.php", base]
+    last = "imeiserver unreachable"
+    for url in urls:
+        try:
+            r = requests.post(
+                url,
+                data={
+                    "username": IMS_USER,
+                    "apiaccesskey": IMS_KEY,
+                    "action": action,
+                    "requestformat": "JSON",
+                    "parameters": base64.b64encode(json.dumps(params).encode()).decode() if params else "",
+                },
+                timeout=timeout,
+            )
+        except requests.RequestException:
+            last = "imeiserver unreachable"
+            continue
+        try:
+            data = r.json()
+            if not isinstance(data, dict):
+                raise ValueError("not an object")
+        except ValueError:
+            last = f"imeiserver returned HTTP {r.status_code} (not JSON)"
+            continue
+        err = data.get("ERROR")
+        if err:
+            msg = err[0].get("MESSAGE") if isinstance(err, list) and err and isinstance(err[0], dict) else str(err)[:200]
+            raise HTTPException(status_code=502, detail=f"imeiserver error: {str(msg)[:200]}")
+        return data
+    raise HTTPException(status_code=502, detail=last)
+
+
+def catalog_ims():
+    now = time.time()
+    hit = _cache.get("ims")
+    if hit and now - hit[0] < CACHE_TTL:
+        return hit[1]
+    items = parse_dhru_services(ims_call("imeiservicelist"), "ims-", "ims")
+    _cache["ims"] = (now, items)
+    return items
+
+
+# ---------------------------------------------------------------
 # lock2unlock.in (GSM Theme API): POST {host}/public/api/index.php
 # الأوامر: accountinfo | imeiservicelist | placebulkorder | getimeiorderbulk
 # يتفعّل فقط لو L2U_API_URL و L2U_USERNAME و L2U_API_KEY موجودة في Vercel
@@ -579,6 +632,7 @@ def catalog():
     for enabled, fn, label in (
         (IU_ENABLED, catalog_iu, "imei-unlock"),
         (L2U_ENABLED, catalog_l2u, "lock2unlock"),
+        (IMS_ENABLED, catalog_ims, "imeiserver"),
     ):
         if not enabled:
             continue
@@ -586,7 +640,7 @@ def catalog():
             extra += fn()
         except HTTPException as e:
             log.error("%s catalog failed: %s", label, e.detail)
-    others = IU_ENABLED or L2U_ENABLED
+    others = IU_ENABLED or L2U_ENABLED or IMS_ENABLED
     currency, cats, items = "USD", [], []
     try:
         currency, cats, items = catalog_galle()
@@ -696,6 +750,7 @@ def health():
         "admin": bool(ADMIN_SECRET),
         "imei_unlock": IU_ENABLED,
         "lock2unlock": L2U_ENABLED,
+        "imeiserver": IMS_ENABLED,
         "env": env("VERCEL_ENV"),
         "commit": env("VERCEL_GIT_COMMIT_SHA")[:7],
     }
@@ -787,7 +842,7 @@ def create_request(body: RequestIn, request: Request):
     sent = notify(
         f"طلب جديد {code}\n"
         f"الخدمة: {product['name']}\n"
-        f"المورد: {({'iu': 'imei-unlock.net (تنفيذ يدوي)', 'l2u': 'lock2unlock'}).get(product.get('supplier'), 'GalleUnlockers')}\n"
+        f"المورد: {({'iu': 'imei-unlock.net (تنفيذ يدوي)', 'ims': 'imeiserver.com (تنفيذ يدوي)', 'l2u': 'lock2unlock'}).get(product.get('supplier'), 'GalleUnlockers')}\n"
         f"الكمية: {body.quantity}\n"
         f"الإجمالي: ${total}\n"
         f"{lines}\n\n"
@@ -844,6 +899,13 @@ def selftest(k: str = ""):
             out["lock2unlock_error"] = e.detail
     else:
         out["lock2unlock"] = "not configured"
+    if IMS_ENABLED:
+        try:
+            out["imeiserver_services"] = len(catalog_ims())
+        except HTTPException as e:
+            out["imeiserver_error"] = e.detail
+    else:
+        out["imeiserver"] = "not configured"
     try:
         _, _, items = catalog()
         out["catalog_items"] = len(items)
@@ -952,19 +1014,20 @@ def admin_place(body: PlaceIn, request: Request):
     if product.get("supplier") == "l2u":
         return _place_l2u(rec, product, payload, token, code, qty)
 
-    if product.get("supplier") == "iu":
+    if product.get("supplier") in ("iu", "ims"):
+        site = "imei-unlock.net" if product["supplier"] == "iu" else "imeiserver.com"
         rec["status"] = "manual"
         order_save(rec)
         return {
             "ok": True,
             "manual": True,
             "code": code,
-            "supplier": "imei-unlock.net",
-            "service_id": product["id"].replace("iu-", "", 1),
+            "supplier": site,
+            "service_id": product["id"].split("-", 1)[1],
             "service": product["name"],
             "quantity": qty,
             "fields": payload.get("f") or {},
-            "note": "نفّذ هذا الطلب يدويًا من لوحة imei-unlock.net بعد تأكيد الدفع.",
+            "note": f"نفّذ هذا الطلب يدويًا من لوحة {site} بعد تأكيد الدفع.",
         }
 
     h = token_hash(token)
@@ -1040,26 +1103,36 @@ def _apply_final(uuid, status, replay):
         log.error("apply_final failed: %s", type(e).__name__)
 
 
+def _dhru_status(uuid, item):
+    """STATUS: 4 ناجح، 3 مرفوض، غير ذلك قيد التنفيذ (معيار Dhru)."""
+    try:
+        code_status = int(item.get("STATUS"))
+    except (TypeError, ValueError):
+        code_status = None
+    status = {4: "success", 3: "rejected"}.get(code_status, "sent")
+    replay = item.get("CODE") or ""
+    if status in ("success", "rejected"):
+        _apply_final(uuid, status, replay)
+    return {"status": status, "replay": replay, "code_status": code_status}
+
+
 @router.get("/admin/status", dependencies=[Depends(require_admin)])
 def admin_status(uuid: str = ""):
     if not UUID_RE.match(uuid):
         raise HTTPException(status_code=422, detail="Invalid order_uuid")
+    if uuid.startswith("ims-"):
+        if not IMS_ENABLED:
+            raise HTTPException(status_code=503, detail="imeiserver not configured")
+        ref = uuid[4:]
+        j = ims_call("getimeiorder", {"ID": int(ref) if ref.isdigit() else ref})
+        return _dhru_status(uuid, first_success(j))
     if uuid.startswith("l2-"):
         if not L2U_ENABLED:
             raise HTTPException(status_code=503, detail="lock2unlock not configured")
         ref = uuid[3:]
         j = l2u_call("getimeiorderbulk", {"1": {"ID": int(ref) if ref.isdigit() else ref}})
         entry = j.get("1") if isinstance(j.get("1"), dict) else {}
-        item = first_success(entry)
-        try:
-            code_status = int(item.get("STATUS"))
-        except (TypeError, ValueError):
-            code_status = None
-        status = {4: "success", 3: "rejected"}.get(code_status, "sent")
-        replay = item.get("CODE") or ""
-        if status in ("success", "rejected"):
-            _apply_final(uuid, status, replay)
-        return {"status": status, "replay": replay, "code_status": code_status}
+        return _dhru_status(uuid, first_success(entry))
     data = fusion("GET", "/order", params={"order_uuid": uuid})
     return data.get("data")
 
@@ -1080,6 +1153,12 @@ def admin_account():
             out["extra"] = [{"name": "lock2unlock", "balance": ai.get("credit")}]
         except HTTPException as e:
             out["extra"] = [{"name": "lock2unlock", "balance": "خطأ: " + str(e.detail)[:60]}]
+    if IMS_ENABLED:
+        try:
+            ai = first_success(ims_call("accountinfo")).get("AccountInfo") or {}
+            out.setdefault("extra", []).append({"name": "imeiserver", "balance": ai.get("credit")})
+        except HTTPException as e:
+            out.setdefault("extra", []).append({"name": "imeiserver", "balance": "خطأ: " + str(e.detail)[:60]})
     return out
 
 
@@ -1334,7 +1413,7 @@ async function loadHealth(){
     const r=await fetch(root+'/health');const d=await r.json();
     const add=(t,ok)=>box.appendChild(h('span','chip '+(ok?'ok':'bad'),t));
     add('السيرفر',d.ok);add('المورد',d.supplier);add('تيليجرام',d.telegram);
-    add('التخزين',d.redis);add('imei-unlock',d.imei_unlock);if(d.lock2unlock!==undefined)add('lock2unlock',d.lock2unlock);
+    add('التخزين',d.redis);add('imei-unlock',d.imei_unlock);if(d.lock2unlock!==undefined)add('lock2unlock',d.lock2unlock);if(d.imeiserver)add('imeiserver',d.imeiserver);
     if(d.commit)box.appendChild(h('span','chip','v '+d.commit));
     STORAGE=!!d.redis;
   }catch(e){box.appendChild(h('span','chip bad','لا يوجد اتصال'))}
@@ -1419,14 +1498,14 @@ function orderCard(o){
   const hd=h('div','head');hd.append(h('span','mono',o.code),h('span','badge '+st[1],st[0]));
   c.appendChild(hd);
   c.appendChild(h('div','name',o.name||''));
-  c.appendChild(h('div','mut','الكمية '+(o.q||1)+' • الإجمالي $'+(o.total!=null?o.total:'-')+' • '+ago(o.t||0)+(o.supplier==='iu'?' • imei-unlock':(o.supplier==='l2u'?' • lock2unlock':''))));
+  c.appendChild(h('div','mut','الكمية '+(o.q||1)+' • الإجمالي $'+(o.total!=null?o.total:'-')+' • '+ago(o.t||0)+(o.supplier==='iu'?' • imei-unlock':(o.supplier==='ims'?' • imeiserver':(o.supplier==='l2u'?' • lock2unlock':'')))));
   if(o.fields&&Object.keys(o.fields).length)c.appendChild(kv(o.fields));
   if(o.order_uuid){const r=h('div','mut','رقم المورد: '+o.order_uuid);c.appendChild(r)}
   if(o.replay)c.appendChild(h('div','note '+(o.status==='success'?'ok':'err'),o.replay));
   if(o.status==='unknown')c.appendChild(h('div','note warn','لا تعد الإرسال قبل مراجعة لوحة المورد بالمرجع '+(o.reference_id||'')+'.'));
   const row=h('div','row');
   if(o.status==='pending'){
-    const g=h('button','btn',o.supplier==='iu'?'تنفيذ (يدوي)':'تنفيذ');
+    const g=h('button','btn',(o.supplier==='iu'||o.supplier==='ims')?'تنفيذ (يدوي)':'تنفيذ');
     g.onclick=()=>confirmRun(o.name,{quantity:o.q||1,total:'$'+o.total},'تنفيذ الآن',()=>place({code:o.code},o.name));
     const d=h('button','btn dang','تجاهل');d.onclick=()=>mark(o.code,'dismissed');
     row.append(g,d);
@@ -1537,45 +1616,3 @@ def admin_page():
 
 app.include_router(router)
 app.include_router(router, prefix="/api")
-
-
-# ==========================================
-# كود ربط خدمات IMEIServer.com
-# ==========================================
-import requests
-from fastapi import HTTPException
-
-@app.get("/api/fetch_imeserver_services")
-def fetch_imeserver_services():
-    # جلب البيانات من متغيرات Vercel
-    username = os.environ.get('IMESERVER_USERNAME')
-    api_key = os.environ.get('IMESERVER_API_KEY')
-    api_url = os.environ.get('IMESERVER_API_URL', "https://www.imeiserver.com/dhru")
-
-    if not username or not api_key:
-        raise HTTPException(status_code=500, detail="Missing IMESERVER variables in Vercel")
-
-    # تجهيز الطلب لنظام Dhru Fusion
-    payload = {
-        'username': username,
-        'apiaccesskey': api_key,
-        'action': 'imeiservicelist',
-        'requestformat': 'JSON'
-    }
-
-    try:
-        # إرسال الطلب إلى الرابط الصحيح
-        response = requests.post(api_url, data=payload, timeout=30)
-        
-        if response.status_code != 200:
-            return {
-                "status": "error",
-                "http_code": response.status_code,
-                "provider_says": response.text[:300],
-                "solution": "Check API credentials or IP restrictions"
-            }
-            
-        return response.json()
-        
-    except Exception as e:
-        return {"error": f"Connection failed: {str(e)}"}
