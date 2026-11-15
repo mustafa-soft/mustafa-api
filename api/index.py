@@ -2749,3 +2749,32 @@ def get_services():
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# كود ربط خدمات lock2unlock.in
+# ==========================================
+@app.get("/api/fetch_services")
+def fetch_lock2unlock_services():
+    # جلب البيانات من إعدادات Vercel
+    username = os.environ.get('LOCK2UNLOCK_USERNAME')
+    api_key = os.environ.get('LOCK2UNLOCK_API_KEY')
+    api_url = os.environ.get('LOCK2UNLOCK_API_URL')
+
+    if not username or not api_key or not api_url:
+        return {"error": "Missing environment variables in Vercel"}
+
+    # تجهيز الطلب لنظام Dhru Fusion
+    payload = {
+        'username': username,
+        'apiaccesskey': api_key,
+        'action': 'imeiservicelist',
+        'requestformat': 'JSON'
+    }
+
+    try:
+        # إرسال الطلب باستخدام مكتبة requests التي قمت باستدعائها مسبقاً
+        response = requests.post(api_url, data=payload, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
