@@ -2715,3 +2715,37 @@ def get_new_services():
         return res.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+import urllib.request
+import urllib.parse
+import os
+import json
+from fastapi import HTTPException
+
+@app.get("/api/fetch_services")
+def get_services():
+    username = os.environ.get('LOCK2UNLOCK_USERNAME')   # بريدك الإلكتروني
+    api_key = os.environ.get('LOCK2UNLOCK_API_KEY')     # مفتاح API
+    api_url = "https://lock2unlock.in/api/index.php"    # الرابط الذي أرسلته
+
+    if not username or not api_key:
+        raise HTTPException(status_code=500, detail="Missing environment variables")
+
+    # البيانات المطلوبة لجلب الخدمات في نظام Dhru Fusion
+    payload = urllib.parse.urlencode({
+        'username': username,
+        'apiaccesskey': api_key,
+        'action': 'imeiservicelist',
+        'requestformat': 'JSON'
+    }).encode('utf-8')
+
+    try:
+        req = urllib.request.Request(api_url, data=payload)
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        
+        with urllib.request.urlopen(req) as response:
+            result = response.read().decode('utf-8')
+            return json.loads(result)
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
