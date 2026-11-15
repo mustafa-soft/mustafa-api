@@ -2819,3 +2819,37 @@ def fetch_lock2unlock_services_v2():
         
     except Exception as e:
         return {"error": f"فشل الاتصال: {str(e)}"}
+
+
+# ==========================================
+# كود جلب خدمات lock2unlock (آمن ولا يتعارض)
+# ==========================================
+@app.get("/api/fetch_lock_final")
+def fetch_lock_final():
+    username = os.environ.get('LOCK2UNLOCK_USERNAME')
+    api_key = os.environ.get('LOCK2UNLOCK_API_KEY')
+    api_url = os.environ.get('LOCK2UNLOCK_API_URL', "https://lock2unlock.in/public")
+
+    if not username or not api_key:
+        return {"error": "المتغيرات غير موجودة في Vercel"}
+
+    payload = {
+        'username': username,
+        'apiaccesskey': api_key,
+        'action': 'imeiservicelist',
+        'requestformat': 'JSON'
+    }
+
+    try:
+        response = requests.post(api_url, data=payload, timeout=30)
+        
+        if response.status_code != 200:
+            return {
+                "error": "Provider Error", 
+                "code": response.status_code, 
+                "text": response.text[:200]
+            }
+            
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
