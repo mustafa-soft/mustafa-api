@@ -984,11 +984,17 @@ def create_request(body: RequestIn, request: Request):
 
 
 @router.get("/selftest")
-def selftest(k: str = ""):
+def selftest(k: str = "", fresh: int = 0):
     """فحص سريع: افتحه /selftest?k=ADMIN_SECRET. يرسل رسالة تجريبية لتيليجرام ويعرض سبب الفشل."""
     if not ADMIN_SECRET or not hmac.compare_digest(k.encode(), ADMIN_SECRET.encode()):
         raise HTTPException(status_code=401, detail="Unauthorized")
+    if fresh:
+        _cache.clear()
     out = {"telegram_configured": bool(TG_TOKEN and TG_CHAT)}
+    try:
+        out["vercel_outbound_ip"] = requests.get("https://api.ipify.org", timeout=6).text.strip()[:45]
+    except Exception:
+        out["vercel_outbound_ip"] = "unknown"
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
