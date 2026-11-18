@@ -57,6 +57,8 @@ VE_URL = env("IMEI_VE_SERVER_API_URL").rstrip("/") or "https://imeiveserver.com"
 VE_USER = env("IMEI_VE_SERVER_USERNAME")
 VE_KEY = env("IMEI_VE_SERVER_API_KEY")
 VE_ENABLED = bool(VE_USER and VE_KEY)
+VE_PROXY_URL = env("IMEI_VE_SERVER_PROXY_URL").rstrip("/")
+VE_PROXY_KEY = env("IMEI_VE_SERVER_PROXY_KEY")
 ADMIN_SECRET = env("ADMIN_SECRET")
 ALLOWED_ORIGIN = env("ALLOWED_ORIGIN", "https://mustafa-soft.com").rstrip("/")
 PUBLIC_URL = env("PUBLIC_URL").rstrip("/")
@@ -491,12 +493,17 @@ def catalog_l2u():
     return items
 # --- imeiveserver (Dhru) ---
 def ve_call(action, params=None, timeout=30, write=False):
-    url = VE_URL if VE_URL.lower().endswith(".php") else VE_URL.rstrip("/") + "/api/index.php"
+    use_proxy = bool(VE_PROXY_URL and VE_PROXY_KEY)
+    if use_proxy:
+        url = VE_PROXY_URL if VE_PROXY_URL.lower().endswith(".php") else VE_PROXY_URL.rstrip("/") + "/ve-proxy.php"
+    else:
+        url = VE_URL if VE_URL.lower().endswith(".php") else VE_URL.rstrip("/") + "/api/index.php"
     data = {"username": VE_USER, "apiaccesskey": VE_KEY, "action": action, "requestformat": "JSON"}
     if params:
         data["parameters"] = base64.b64encode(json.dumps(params).encode()).decode()
     try:
-        r = requests.post(url, data=data, timeout=timeout)
+        headers = {"X-Proxy-Key": VE_PROXY_KEY} if use_proxy else {}
+        r = requests.post(url, data=data, headers=headers, timeout=timeout)
     except requests.RequestException:
         if write:
             raise OrderUnknown("request failed")
