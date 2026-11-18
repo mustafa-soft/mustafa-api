@@ -490,10 +490,13 @@ def catalog_l2u():
     _cache["l2u"] = (now, items)
     return items
 # --- imeiveserver (Dhru) ---
-def ve_call(action, timeout=30, write=False):
+def ve_call(action, params=None, timeout=30, write=False):
     url = VE_URL if VE_URL.lower().endswith(".php") else VE_URL.rstrip("/") + "/api/index.php"
+    data = {"username": VE_USER, "apiaccesskey": VE_KEY, "action": action, "requestformat": "JSON"}
+    if params:
+        data["parameters"] = base64.b64encode(json.dumps(params).encode()).decode()
     try:
-        r = requests.post(url, data={"username": VE_USER, "apiaccesskey": VE_KEY, "action": action, "requestformat": "JSON"}, timeout=timeout)
+        r = requests.post(url, data=data, timeout=timeout)
     except requests.RequestException:
         if write:
             raise OrderUnknown("request failed")
@@ -651,7 +654,7 @@ def create_request(body: RequestIn, request: Request):
     code = "MS-" + token_hash(token)[:8].upper()
     total = round(product["price"] * body.quantity, 2)
     lines = "\n".join(f"{k}: {v}" for k, v in fields.items()) or "-"
-    sent = notify(f"طلب جديد {code}\nالخدمة: {product['name']}\nالمورد: {({'iu': 'imei-unlock.net (تنفيذ يدوي)', 'ims': 'imeiserver.com (تنفيذ يدوي)', 'l2u': 'lock2unlock', 've': 'imeiveserver.com (تنفيذ يدوي)'}).get(product.get('supplier'), 'GalleUnlockers')}\nالكمية: {body.quantity}\nالإجمالي: ${total}\n{lines}\n\nبعد تأكيد الدفع الصق الرمز في /admin:\n{token}")
+    sent = notify(f"طلب جديد {code}\nالخدمة: {product['name']}\nالمورد: {({'iu': 'imei-unlock.net (تنفيذ يدوي)', 'ims': 'imeiserver.com (تنفيذ يدوي)', 'l2u': 'lock2unlock', 've': 'imeiveserver.com'}).get(product.get('supplier'), 'GalleUnlockers')}\nالكمية: {body.quantity}\nالإجمالي: ${total}\n{lines}\n\nبعد تأكيد الدفع الصق الرمز في /admin:\n{token}")
     if not sent:
         unlock(f"new:{dedupe}")
         raise HTTPException(status_code=502, detail="Could not deliver the request")
@@ -791,6 +794,45 @@ def _place_ims(rec, product, payload, token, code, qty):
     order_save(rec)
     notify(f"أُرسل إلى imeiserver: {ref_id}\nالرقم: {uuid_}")
     return {"ok": True, "code": code, "reference_id": ref_id, "order_uuid": uuid_, "note": resp.get("response") if isinstance(resp, dict) else None}
+
+def _place_ve(rec, product, payload, token, code, qty):
+    h = token_hash(token)
+    ref_id = "ms-" + h[:24]
+    if not lock(f"place:{ref_id}", 600):
+        raise HTTPException(status_code=409, detail="Already submitted, check the supplier panel")
+    key = str(int(h[:8], 16))
+    sid = product["id"].replace("ve-", "", 1)
+    fields_b64 = base64.b64encode(json.dumps(payload.get("f") or {}, ensure_ascii=False).encode()).decode()
+    params = {key: {"ID": int(sid) if sid.isdigit() else sid, "QNT": qty, "CUSTOMFIELD": fields_b64}}
+    def unknown():
+        rec.update(status="unknown", reference_id=ref_id)
+        order_save(rec)
+        notify(f"نتيجة غير معروفة للطلب {ref_id}. لا تعد الإرسال، راجع لوحة imeiveserver بهذا المرجع.")
+        return JSONResponse(status_code=202, content={"ok": False, "unknown": True, "code": code, "reference_id": ref_id, "detail": "Outcome unknown. Do NOT retry. Check the supplier panel."})
+    try:
+        resp = ve_call("placebulkorder", params, timeout=ORDER_TIMEOUT, write=True)
+    except OrderUnknown:
+        return unknown()
+    except HTTPException:
+        unlock(f"place:{ref_id}")
+        raise
+    succ = resp.get("SUCCESS")
+    item = None
+    if isinstance(succ, dict):
+        item = succ.get(key)
+        if item is None and len(succ) == 1:
+            item = next(iter(succ.values()))
+    if not isinstance(item, dict):
+        return unknown()
+    if str(item.get("status")).lower() != "success":
+        unlock(f"place:{ref_id}")
+        raise HTTPException(status_code=400, detail=str(item.get("message") or "Rejected")[:200])
+    uuid_ = f"ve-{item.get('referenceid')}"
+    rec.update(status="sent", reference_id=ref_id, order_uuid=uuid_)
+    order_save(rec)
+    notify(f"أُرسل إلى imeiveserver: {ref_id}\nالرقم: {uuid_}")
+    return {"ok": True, "code": code, "reference_id": ref_id, "order_uuid": uuid_, "note": item.get("message")}
+
 @router.post("/admin/place", dependencies=[Depends(require_admin)])
 def admin_place(body: PlaceIn, request: Request):
     token = (body.token or "").strip()
@@ -814,8 +856,10 @@ def admin_place(body: PlaceIn, request: Request):
         return _place_l2u(rec, product, payload, token, code, qty)
     if product.get("supplier") == "ims" and product.get("auto"):
         return _place_ims(rec, product, payload, token, code, qty)
-    if product.get("supplier") in ("iu", "ims", "ve"):
-        site = {"iu": "imei-unlock.net", "ims": "imeiserver.com", "ve": "imeiveserver.com"}[product["supplier"]]
+    if product.get("supplier") == "ve":
+        return _place_ve(rec, product, payload, token, code, qty)
+    if product.get("supplier") in ("iu", "ims"):
+        site = {"iu": "imei-unlock.net", "ims": "imeiserver.com"}[product["supplier"]]
         rec["status"] = "manual"
         order_save(rec)
         return {"ok": True, "manual": True, "code": code, "supplier": site, "service_id": product["id"].rsplit("-", 1)[1], "service": product["name"], "quantity": qty, "fields": payload.get("f") or {}, "note": f"نفّذ هذا الطلب يدويًا من لوحة {site} بعد تأكيد الدفع."}
@@ -883,6 +927,19 @@ def admin_status(uuid: str = ""):
         ref = uuid[3:]
         j = l2u_call("getimeiorderbulk", {"1": {"ID": int(ref) if ref.isdigit() else ref}})
         entry = j.get("1") if isinstance(j.get("1"), dict) else {}
+        return _dhru_status(uuid, first_success(entry))
+    if uuid.startswith("ve-"):
+        if not VE_ENABLED:
+            raise HTTPException(status_code=503, detail="imeiveserver not configured")
+        ref = uuid[3:]
+        j = ve_call("getimeiorderbulk", {"1": {"ID": int(ref) if ref.isdigit() else ref}})
+        entry = j.get("1") if isinstance(j.get("1"), dict) else {}
+        # Dhru returns SUCCESS -> {key: {...}} for bulk status, reuse _dhru_status
+        succ = j.get("SUCCESS") or {}
+        if isinstance(succ, dict) and succ:
+            first = next(iter(succ.values()))
+            if isinstance(first, dict):
+                return _dhru_status(uuid, first)
         return _dhru_status(uuid, first_success(entry))
     data = fusion("GET", "/order", params={"order_uuid": uuid})
     return data.get("data")
@@ -1223,7 +1280,7 @@ function orderCard(o){
   if(o.status==='unknown')c.appendChild(h('div','note warn','لا تعد الإرسال قبل مراجعة لوحة المورد بالمرجع '+(o.reference_id||'')+'.'));
   const row=h('div','row');
   if(o.status==='pending'){
-    const g=h('button','btn',(o.supplier==='iu'||o.supplier==='ims'||o.supplier==='ve')?'تنفيذ (يدوي)':'تنفيذ');
+    const g=h('button','btn',(o.supplier==='iu'||o.supplier==='ims')?'تنفيذ (يدوي)':'تنفيذ');
     g.onclick=()=>confirmRun(o.name,{quantity:o.q||1,total:'$'+o.total},'تنفيذ الآن',()=>place({code:o.code},o.name));
     const d=h('button','btn dang','تجاهل');d.onclick=()=>mark(o.code,'dismissed');
     row.append(g,d);
@@ -1262,7 +1319,7 @@ function parseTok(){
   box.appendChild(kv({service:p.n||p.p,quantity:q,total:'$'+(Math.round((p.pr||0)*q*100)/100),fields:p.f||{},date:ago(p.t||0)}));
   if(Date.now()/1000-(p.t||0)>7*86400){box.appendChild(h('div','note err','الرمز منتهي (أقدم من 7 أيام).'));return}
   if(String(p.p||'').startsWith('iu-'))box.appendChild(h('div','note warn','خدمة من imei-unlock: التنفيذ يدوي من لوحتهم.'));
-  if(String(p.p||'').startsWith('ve-'))box.appendChild(h('div','note warn','خدمة من imeiveserver: التنفيذ يدوي من لوحتهم.'));
+  
   PARSED={tok:m[0],name:p.n||'',q:q,total:'$'+(Math.round((p.pr||0)*q*100)/100)};
   $('pgo').disabled=false;
 }
