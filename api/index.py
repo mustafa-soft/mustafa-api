@@ -501,9 +501,24 @@ def ve_call(action, params=None, timeout=30, write=False):
     data = {"username": VE_USER, "apiaccesskey": VE_KEY, "action": action, "requestformat": "JSON"}
     if params:
         data["parameters"] = base64.b64encode(json.dumps(params).encode()).decode()
+    def _post(target, hdrs):
+        return requests.post(target, data=data, headers=hdrs, timeout=timeout)
     try:
         headers = {"X-Proxy-Key": VE_PROXY_KEY} if use_proxy else {}
-        r = requests.post(url, data=data, headers=headers, timeout=timeout)
+        r = _post(url, headers)
+        # Fallback: if proxy returns 404 / HTML (PHP not running on VPS), try direct imeiveserver
+        if use_proxy and (r.status_code == 404 or 'text/html' in r.headers.get('Content-Type','')):
+            try:
+                direct = VE_URL if VE_URL.lower().endswith(".php") else VE_URL.rstrip("/") + "/api/index.php"
+                r2 = _post(direct, {})
+                if r2.status_code < 400:
+                    try:
+                        if isinstance(r2.json(), dict):
+                            r = r2
+                    except ValueError:
+                        pass
+            except requests.RequestException:
+                pass
     except requests.RequestException:
         if write:
             raise OrderUnknown("request failed")
